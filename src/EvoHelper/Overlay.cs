@@ -1,27 +1,57 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Il2CppInterop.Runtime.Attributes;
+using TMPro;
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace EvoHelper;
 
-// Draws the helper panel with Unity's immediate-mode GUI while the
-// "Select an upgrade" page is open. F8 hides/shows it.
+// Adds an "Evolutions" block of icons to the game's own description panel on the
+// "Select an upgrade" page, using the game's font. Hovering an icon shows its name.
+// If building the block fails, it falls back to the plain IMGUI panel from v0.3.
 public class Overlay : MonoBehaviour
 {
     public Overlay(IntPtr ptr) : base(ptr) { }
 
-    const string Green = "#8FE388";
-    const string Gold = "#F2C14E";
-    const string Grey = "#9A8F99";
-    const string White = "#F3ECE4";
+    static readonly Color Gold = new(0.95f, 0.76f, 0.31f, 1f);
+    static readonly Color Green = new(0.56f, 0.89f, 0.53f, 1f);
+    static readonly Color Grey = new(0.60f, 0.56f, 0.60f, 1f);
+    static readonly Color ChipBg = new(0f, 0f, 0f, 0.22f);
+    static readonly Color ChipBgReady = new(0.30f, 0.62f, 0.28f, 0.28f);
+    static readonly Color Dim = new(0.42f, 0.42f, 0.42f, 0.75f);
 
     static bool _hidden;
-    static bool _errorLogged;
+    bool _uguiFailed, _layoutLogged, _errorLogged, _shift;
+    Vector2 _mouse;
 
-    GUIStyle _style;
-    Texture2D _bg;
-    int _styleFontSize;
+    // Game-font settings copied from the tooltip: body text (cloak 16), the
+    // "Synergies with Equipment" heading, and the pixel font of its "x" / "=" signs.
+    TMP_FontAsset _font, _hdrFont, _glyphFont;
+    Material _fontMat, _hdrMat, _glyphMat;
+    float _fs = 16f, _hdrSize = 10.65f;
+    Color _textColor = Color.white, _hdrColor = Gold;
+
+    RectTransform _root;
+    LayoutElement _rootLayout;
+    bool _inLayoutGroup;
+    int _builtVersion = -1;
+    float _builtWidth = -1;
+    readonly List<(RectTransform rt, Item item)> _icons = new();
+
+    // Stack of hover tooltips: [0] opened from the block's icons, [n+1] from an icon inside [n].
+    sealed class Popup
+    {
+        public RectTransform Rt, Anchor;
+        public Item Item;
+        public bool Shift;
+        public float Touched;
+        public readonly List<(RectTransform rt, Item item)> Icons = new();
+    }
+    readonly List<Popup> _popups = new();
+    const float PopupGrace = 0.3f;   // seconds a tooltip survives after the mouse leaves it
+    bool _layoutDirty;
 
     static bool ShouldShow()
     {
@@ -31,8 +61,579 @@ public class Overlay : MonoBehaviour
         return Evo.HasOffers;
     }
 
-    void EnsureStyle(int fontSize)
+    // ---------- frame loop ----------
+
+    void LateUpdate()
     {
+        bool show = !_hidden && ShouldShow();
+        try
+        {
+            if (!show || _uguiFailed)
+            {
+                if (_root != null) _root.gameObject.SetActive(false);
+                ClosePopupsFrom(0);
+                return;
+            }
+
+            var ui = LevelUpUI.I;
+            if (_root == null && !CreateRoot(ui)) { _uguiFailed = true; return; }
+            if (!_root.gameObject.activeSelf) _root.gameObject.SetActive(true);
+            if (_inLayoutGroup && _root.GetSiblingIndex() != _root.parent.childCount - 1) _root.SetAsLastSibling();
+
+            float width = _root.rect.width;
+            if (width < 10f) return;   // wait for the first layout pass
+            if (_builtVersion != Evo.Version || Mathf.Abs(width - _builtWidth) > 1f)
+            {
+                Rebuild(width);
+                _builtVersion = Evo.Version;
+                _builtWidth = width;
+            }
+            EnsureScrollable(ui);
+            UpdatePopups();
+        }
+        catch (Exception e)
+        {
+            _uguiFailed = true;
+            Plugin.Log.LogError("In-tooltip panel failed, using the fallback panel: " + e);
+            if (_root != null) Destroy(_root.gameObject);
+            ClosePopupsFrom(0);
+        }
+    }
+
+    void OnGUI()
+    {
+        var ev = Event.current;
+        if (ev == null) return;
+        // IMGUI y runs top-down; UI screen points run bottom-up.
+        _mouse = new Vector2(ev.mousePosition.x, Screen.height - ev.mousePosition.y);
+
+        _shift = ev.shift;
+
+        if (ev.type == EventType.KeyDown && ev.keyCode == KeyCode.F8)
+        {
+            _hidden = !_hidden;
+            ev.Use();
+        }
+        if (ev.type == EventType.ScrollWheel && _root != null && _root.gameObject.activeInHierarchy)
+            ScrollDetails(ev.delta.y);
+        if (_uguiFailed && !_hidden && ShouldShow())
+        {
+            try { FallbackPanel.Draw(); }
+            catch (Exception e)
+            {
+                if (!_errorLogged) { _errorLogged = true; Plugin.Log.LogError("Fallback panel failed: " + e); }
+            }
+        }
+    }
+
+    // ---------- setup ----------
+
+    bool CreateRoot(LevelUpUI ui)
+    {
+        var details = ui.PanelSelectionDetails;
+        if (details == null) { Plugin.Log.LogWarning("No PanelSelectionDetails; using fallback panel."); return false; }
+
+        if (!_layoutLogged) { _layoutLogged = true; LayoutLog.Dump(details.transform); }
+
+        // Font: the description text of the game's tooltip.
+        TextMeshProUGUI src = null;
+        if (ui.LocDetailsDesc != null) src = ui.LocDetailsDesc.GetComponent<TextMeshProUGUI>();
+        if (src == null) src = details.GetComponentInChildren<TextMeshProUGUI>(true);
+        if (src == null) { Plugin.Log.LogWarning("No tooltip text found; using fallback panel."); return false; }
+        _font = src.font;
+        _fontMat = src.fontSharedMaterial;
+        _fs = Mathf.Max(8f, src.fontSize);
+        _textColor = src.color;
+
+        _hdrFont = _font; _hdrMat = _fontMat; _hdrSize = Mathf.Round(_fs * 0.666f * 100f) / 100f;
+        var hdr = FindDeep(details.transform, "TxtEvos")?.GetComponent<TextMeshProUGUI>();
+        if (hdr != null) { _hdrFont = hdr.font; _hdrMat = hdr.fontSharedMaterial; _hdrSize = hdr.fontSize; _hdrColor = hdr.color; }
+
+        _glyphFont = _font; _glyphMat = _fontMat;
+        var glyph = FindDeep(details.transform, "TxtEquals")?.GetComponent<TextMeshProUGUI>();
+        if (glyph != null) { _glyphFont = glyph.font; _glyphMat = glyph.fontSharedMaterial; }
+
+        // Prefer flowing inside the scrollable details content, after the game's own text.
+        Transform container = ui.ScrlDetails != null && ui.ScrlDetails.content != null
+            ? ui.ScrlDetails.content
+            : details.transform;
+        _inLayoutGroup = container.GetComponent<VerticalLayoutGroup>() != null;
+
+        var go = new GameObject("EvoHelperBlock");
+        _root = go.AddComponent<RectTransform>();
+        if (_inLayoutGroup)
+        {
+            _root.SetParent(container, false);
+            _rootLayout = go.AddComponent<LayoutElement>();
+            _rootLayout.flexibleWidth = 1f;
+        }
+        else
+        {
+            // No layout group: pin to the bottom of the details panel, inside its frame.
+            _root.SetParent(details.transform, false);
+            _root.anchorMin = new Vector2(0.06f, 0f);
+            _root.anchorMax = new Vector2(0.94f, 0f);
+            _root.pivot = new Vector2(0.5f, 0f);
+            _root.anchoredPosition = new Vector2(0f, _fs * 2.2f);
+        }
+        Plugin.Log.LogInfo($"Tooltip block attached to '{_root.parent.name}' (layout group: {_inLayoutGroup}), font '{_font?.name}' size {_fs}.");
+        return true;
+    }
+
+    // ---------- building ----------
+
+    float Icon => Mathf.Round(_fs * 1.9f);          // 30 at the tooltip's size 16
+    float Gap => Mathf.Max(3f, Mathf.Round(_fs * 0.3f));
+
+    static Transform FindDeep(Transform t, string name)
+    {
+        if (t.name == name) return t;
+        for (int i = 0; i < t.childCount; i++)
+        {
+            var hit = FindDeep(t.GetChild(i), name);
+            if (hit != null) return hit;
+        }
+        return null;
+    }
+
+    void Rebuild(float width)
+    {
+        for (int i = _root.childCount - 1; i >= 0; i--) Destroy(_root.GetChild(i).gameObject);
+        _icons.Clear();
+
+        float y = Gap;
+        bool anyUndiscovered = false;
+        var offer = Evo.Current;
+
+        if (offer != null)
+        {
+            y = Header("Evolutions", y, width);
+            if (offer.Evos.Count == 0)
+            {
+                Text(_root, "None", 0, y, width, _hdrSize, Grey, font: _hdrFont, mat: _hdrMat);
+                y += _hdrSize * 1.6f;
+            }
+            else
+            {
+                var chips = offer.Evos.Select(e => (parts: e.Partners, result: e.Result,
+                    bg: e.Status == EvoStatus.HaveAll ? ChipBgReady : ChipBg, showLvlOf3: false)).ToList();
+                y = FlowChips(_root, _icons, chips, 0, y, width, ref anyUndiscovered);
+            }
+        }
+
+        if (Evo.Pairs.Count > 0)
+        {
+            y += Gap;
+            y = Header($"Ready to evolve (each Lv{Evo.EvoLevel})", y, width);
+            var chips = Evo.Pairs.Select(p => (parts: p.Parts, result: p.Result, bg: ChipBgReady, showLvlOf3: true)).ToList();
+            y = FlowChips(_root, _icons, chips, 0, y, width, ref anyUndiscovered);
+        }
+
+        if (anyUndiscovered)
+        {
+            y += Gap * 0.5f;
+            var sw = NewRect("LegendSwatch", _root);
+            Place(sw, 0, y + 1, _hdrSize, _hdrSize);
+            Frame(sw, Gold);
+            Text(_root, "not in your encyclopedia yet", _hdrSize * 1.6f, y, width, _hdrSize, Grey, font: _hdrFont, mat: _hdrMat);
+            y += _hdrSize * 1.6f;
+        }
+
+        y += Gap;
+        if (_inLayoutGroup) { _rootLayout.preferredHeight = y; _rootLayout.minHeight = y; }
+        else _root.sizeDelta = new Vector2(_root.sizeDelta.x, y);
+
+        _layoutDirty = true;
+    }
+
+    // The game decides whether its tooltip scrolls from its own text only. After adding the
+    // block, re-measure the list and switch scrolling (and its scrollbar) on if it now overflows.
+    void EnsureScrollable(LevelUpUI ui)
+    {
+        var scrl = ui.ScrlDetails;
+        if (scrl == null || scrl.content == null || scrl.viewport == null) return;
+        if (_layoutDirty)
+        {
+            _layoutDirty = false;
+            LayoutRebuilder.ForceRebuildLayoutImmediate(scrl.content);
+        }
+        if (scrl.content.rect.height <= scrl.viewport.rect.height + 1f) return;
+        if (!scrl.vertical) scrl.vertical = true;
+        var bar = scrl.verticalScrollbar;
+        if (bar != null && !bar.gameObject.activeSelf) bar.gameObject.SetActive(true);
+    }
+
+    // Mouse-wheel scrolling of the tooltip while the cursor is over it.
+    void ScrollDetails(float delta)
+    {
+        var scrl = LevelUpUI.I?.ScrlDetails;
+        if (scrl == null || scrl.content == null || scrl.viewport == null) return;
+
+        var canvas = _root.GetComponentInParent<Canvas>();
+        var cam = canvas == null || canvas.renderMode == RenderMode.ScreenSpaceOverlay ? null : canvas.worldCamera;
+        if (!RectTransformUtility.RectangleContainsScreenPoint(scrl.viewport, _mouse, cam)) return;
+
+        float overflow = scrl.content.rect.height - scrl.viewport.rect.height;
+        if (overflow <= 1f) return;
+        // One wheel notch = about one row of icons.
+        float step = (Icon + Gap * 2) / overflow;
+        scrl.verticalNormalizedPosition = Mathf.Clamp01(scrl.verticalNormalizedPosition - Mathf.Sign(delta) * step);
+    }
+
+    // Styled like the tooltip's own "Synergies with Equipment" heading.
+    float Header(string text, float y, float width)
+    {
+        Text(_root, text, 0, y, width, _hdrSize, _hdrColor, TextAlignmentOptions.Center, _hdrFont, _hdrMat);
+        return y + _hdrSize * 1.8f;
+    }
+
+    // Lays out recipe chips left to right, wrapping to new rows.
+    [HideFromIl2Cpp]
+    float FlowChips(RectTransform parent, List<(RectTransform rt, Item item)> sink,
+        List<(List<Item> parts, Item result, Color bg, bool showLvlOf3)> chips, float x0, float y, float width, ref bool anyUndiscovered)
+    {
+        float icon = Icon, gap = Gap, pad = Mathf.Round(gap * 0.6f);
+        float arrowW = Mathf.Round(_fs * 0.9f);
+        float rowH = icon + pad * 2;
+        float x = 0;
+
+        foreach (var c in chips)
+        {
+            int n = c.parts.Count;
+            float chipW = pad * 2 + n * icon + (n - 1) * pad + arrowW + icon;
+            if (x > 0 && x + chipW > width) { x = 0; y += rowH + gap; }
+
+            var chip = NewRect("Chip", parent);
+            Place(chip, x0 + x, y, chipW, rowH);
+            var bg = chip.gameObject.AddComponent<Image>();
+            bg.color = c.bg;
+            bg.raycastTarget = false;
+
+            float ix = pad;
+            for (int i = 0; i < n; i++)
+            {
+                if (i > 0) ix += pad;
+                IconAt(chip, sink, c.parts[i], ix, pad, icon, dimIfMissing: true, lvlOf3: c.showLvlOf3, ref anyUndiscovered);
+                ix += icon;
+            }
+            // Same "=" glyph and pixel font as the game's own evolution rows.
+            Text(chip, "=", ix, pad + icon * 0.5f - _fs * 0.7f, arrowW, _fs, _textColor, TextAlignmentOptions.Center, _glyphFont, _glyphMat);
+            ix += arrowW;
+            IconAt(chip, sink, c.result, ix, pad, icon, dimIfMissing: false, lvlOf3: false, ref anyUndiscovered);
+
+            // "+" badge: this result can itself evolve further (hover it for details).
+            if (Further.For(c.result.Info).Count > 0)
+            {
+                Text(chip, "+", ix + icon - _hdrSize * 0.9f + 1, pad + 1, _hdrSize, _fs, new Color(0, 0, 0, 0.9f), TextAlignmentOptions.Center, _glyphFont, _glyphMat);
+                Text(chip, "+", ix + icon - _hdrSize * 0.9f, pad, _hdrSize, _fs, Gold, TextAlignmentOptions.Center, _glyphFont, _glyphMat);
+            }
+
+            x += chipW + gap;
+        }
+        return y + rowH + gap;
+    }
+
+    [HideFromIl2Cpp]
+    void IconAt(RectTransform parent, List<(RectTransform rt, Item item)> sink, Item item, float x, float y, float size, bool dimIfMissing, bool lvlOf3, ref bool anyUndiscovered)
+    {
+        var holder = NewRect(item.Name, parent);
+        Place(holder, x, y, size, size);
+
+        if (!item.Discovered)
+        {
+            anyUndiscovered = true;
+            Frame(holder, Gold);
+        }
+
+        var iconRt = NewRect("Icon", holder);
+        Place(iconRt, 1, 1, size - 2, size - 2);
+        var img = iconRt.gameObject.AddComponent<Image>();
+        img.raycastTarget = false;
+        img.preserveAspect = true;
+        item.Info.ApplyIcon(img);
+        if (dimIfMissing && !item.Owned) img.color = img.color * Dim;
+
+        if (item.Owned && dimIfMissing)
+        {
+            // Level number in the corner, with a 1-unit drop shadow (TMP outlines crash on new text here).
+            string lvl = lvlOf3 ? $"{item.Lvl}/{Evo.EvoLevel}" : item.Lvl.ToString();
+            float ty = size - _hdrSize * 1.25f;
+            Text(holder, lvl, 1, ty + 1, size, _hdrSize, new Color(0, 0, 0, 0.9f), TextAlignmentOptions.Right, _hdrFont, _hdrMat);
+            Text(holder, lvl, 0, ty, size, _hdrSize, item.Lvl >= Evo.EvoLevel ? Green : _textColor, TextAlignmentOptions.Right, _hdrFont, _hdrMat);
+        }
+        sink.Add((holder, item));
+    }
+
+    // A 2-unit border drawn as four thin images.
+    void Frame(RectTransform target, Color color)
+    {
+        float t = Mathf.Max(2f, Mathf.Round(_fs * 0.08f));
+        void Edge(string name, Vector2 aMin, Vector2 aMax, Vector2 size)
+        {
+            var e = NewRect(name, target);
+            e.anchorMin = aMin; e.anchorMax = aMax; e.pivot = new Vector2(0.5f, 0.5f);
+            e.sizeDelta = size; e.anchoredPosition = Vector2.zero;
+            var img = e.gameObject.AddComponent<Image>();
+            img.color = color; img.raycastTarget = false;
+        }
+        Edge("FrameT", new Vector2(0, 1), new Vector2(1, 1), new Vector2(0, t));
+        Edge("FrameB", new Vector2(0, 0), new Vector2(1, 0), new Vector2(0, t));
+        Edge("FrameL", new Vector2(0, 0), new Vector2(0, 1), new Vector2(t, 0));
+        Edge("FrameR", new Vector2(1, 0), new Vector2(1, 1), new Vector2(t, 0));
+    }
+
+    // ---------- hover tooltips (nested) ----------
+    //
+    // Hovering an icon opens a tooltip above it. The tooltip stays open while the mouse is
+    // on it or on the icon that opened it (with a short grace period for crossing the gap),
+    // and its own icons open further tooltips the same way.
+
+    Camera UiCam(out Canvas canvas)
+    {
+        canvas = _root.GetComponentInParent<Canvas>();
+        return canvas == null || canvas.renderMode == RenderMode.ScreenSpaceOverlay ? null : canvas.worldCamera;
+    }
+
+    bool Inside(RectTransform rt, Camera cam) =>
+        rt != null && RectTransformUtility.RectangleContainsScreenPoint(rt, _mouse, cam);
+
+    void UpdatePopups()
+    {
+        var cam = UiCam(out var canvas);
+        if (canvas == null) return;
+        float now = Time.unscaledTime;
+
+        // Drop tooltips whose opening icon has gone (block rebuilt, parent tooltip rebuilt).
+        for (int i = 0; i < _popups.Count; i++)
+            if (_popups[i].Rt == null || _popups[i].Anchor == null) { ClosePopupsFrom(i); break; }
+
+        // 1. Keep alive every tooltip the mouse is on (or on its icon), plus all its parents.
+        for (int i = _popups.Count - 1; i >= 0; i--)
+        {
+            var p = _popups[i];
+            if (!Inside(p.Rt, cam) && !Inside(p.Anchor, cam)) continue;
+            for (int j = 0; j <= i; j++) _popups[j].Touched = now;
+            break;
+        }
+
+        // 2. Find the icon under the mouse, in the topmost tooltip it is over (or the block).
+        int level = -2;
+        RectTransform hitRt = null;
+        Item hitItem = null;
+        for (int i = _popups.Count - 1; i >= 0 && level == -2; i--)
+        {
+            if (!Inside(_popups[i].Rt, cam)) continue;
+            level = i;
+            foreach (var (rt, item) in _popups[i].Icons)
+                if (Inside(rt, cam)) { hitRt = rt; hitItem = item; break; }
+        }
+        if (level == -2)
+        {
+            foreach (var (rt, item) in _icons)
+                if (Inside(rt, cam)) { hitRt = rt; hitItem = item; level = -1; break; }
+        }
+
+        if (hitRt != null)
+        {
+            int child = level + 1;
+            if (_popups.Count > child && _popups[child].Anchor == hitRt)
+            {
+                _popups[child].Touched = now;
+                if (_popups[child].Shift != _shift) RebuildPopup(child, canvas.rootCanvas.transform);
+            }
+            else
+            {
+                ClosePopupsFrom(child);
+                OpenPopup(hitRt, hitItem, canvas.rootCanvas.transform, now);
+            }
+        }
+
+        // 3. Close tooltips (from the top) the mouse has left for longer than the grace period.
+        while (_popups.Count > 0 && now - _popups[_popups.Count - 1].Touched > PopupGrace)
+            ClosePopupsFrom(_popups.Count - 1);
+    }
+
+    [HideFromIl2Cpp]
+    void OpenPopup(RectTransform anchor, Item item, Transform canvasRoot, float now)
+    {
+        var p = new Popup { Anchor = anchor, Item = item, Touched = now };
+        _popups.Add(p);
+        BuildPopup(p, canvasRoot);
+    }
+
+    void RebuildPopup(int index, Transform canvasRoot)
+    {
+        ClosePopupsFrom(index + 1);
+        var p = _popups[index];
+        if (p.Rt != null) Destroy(p.Rt.gameObject);
+        p.Icons.Clear();
+        BuildPopup(p, canvasRoot);
+    }
+
+    void ClosePopupsFrom(int index)
+    {
+        for (int i = _popups.Count - 1; i >= index && i >= 0; i--)
+        {
+            if (_popups[i].Rt != null) Destroy(_popups[i].Rt.gameObject);
+            _popups.RemoveAt(i);
+        }
+    }
+
+    [HideFromIl2Cpp]
+    void BuildPopup(Popup p, Transform canvasRoot)
+    {
+        var item = p.Item;
+        p.Shift = _shift;
+        float pad = Mathf.Round(_fs * 0.45f);
+        float maxW = Mathf.Round(_fs * 15f);
+
+        var rt = NewRect("EvoHelperTooltip", canvasRoot);
+        rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
+        p.Rt = rt;
+        var bg = rt.gameObject.AddComponent<Image>();
+        bg.color = new Color(0.08f, 0.05f, 0.07f, 0.96f);
+        bg.raycastTarget = true;   // the game's cards underneath should not react to the mouse
+        Frame(rt, new Color(0.55f, 0.40f, 0.28f, 1f));
+
+        // Text part.
+        var sb = new System.Text.StringBuilder();
+        sb.Append(item.Name);
+        if (item.Owned) sb.Append($"  <color=#8FE388>Lv{item.Lvl}</color>");
+        if (!item.Discovered) sb.Append($"\n<color=#F2C14E>Not in encyclopedia</color>");
+        if (_shift)
+        {
+            var desc = Describe.Text(item.Info, Math.Max(0, item.Lvl - 1));
+            if (!string.IsNullOrEmpty(desc)) sb.Append($"\n<size={_hdrSize}>{desc}</size>");
+        }
+        else sb.Append($"\n<size={_hdrSize}><color=#9A8F99>hold Shift for description</color></size>");
+        string text = sb.ToString();
+
+        var recipes = Further.For(item.Info);
+        var t = Text(rt, text, pad, pad, maxW, _fs, _textColor, TextAlignmentOptions.Top);
+        t.enableWordWrapping = true;
+        float textW = recipes.Count > 0 ? maxW : Mathf.Min(maxW, t.GetPreferredValues(text).x + 2f);
+        float textH = t.GetPreferredValues(text, textW, 0f).y;
+        Place(t.rectTransform, pad, pad, textW, textH);
+        float y = pad + textH;
+        float w = textW;
+
+        // "Evolves further" as icon chips, hoverable for the next tooltip.
+        if (recipes.Count > 0)
+        {
+            y += Gap;
+            Text(rt, "Evolves further", pad, y, w, _hdrSize, _hdrColor, TextAlignmentOptions.Center, _hdrFont, _hdrMat);
+            y += _hdrSize * 1.8f;
+            bool anyUndiscovered = false;
+            var chips = recipes.Select(r =>
+            {
+                var partners = r.partners.Select(Evo.MakeItem).ToList();
+                bool all = partners.All(x => x.Owned);
+                return (parts: partners, result: Evo.MakeItem(r.result), bg: all ? ChipBgReady : ChipBg, showLvlOf3: false);
+            }).ToList();
+            y = FlowChips(rt, p.Icons, chips, pad, y, w, ref anyUndiscovered) - Gap;
+        }
+        y += pad;
+        rt.sizeDelta = new Vector2(Mathf.Round(w + pad * 2), Mathf.Round(y));
+
+        PlacePopup(rt, p.Anchor, canvasRoot);
+        rt.SetAsLastSibling();
+    }
+
+    // Above the icon; below it if there is no room; kept inside the screen horizontally.
+    void PlacePopup(RectTransform rt, RectTransform anchor, Transform canvasRoot)
+    {
+        rt.pivot = new Vector2(0.5f, 0f);
+        rt.position = anchor.TransformPoint(new Vector3(anchor.rect.center.x, anchor.rect.yMax + Gap, 0f));
+        var canvasRt = canvasRoot.TryCast<RectTransform>();
+        if (canvasRt == null) return;
+
+        var local = canvasRt.InverseTransformPoint(rt.position);
+        var bounds = canvasRt.rect;
+        if (local.y + rt.sizeDelta.y > bounds.yMax)
+        {
+            rt.pivot = new Vector2(0.5f, 1f);
+            rt.position = anchor.TransformPoint(new Vector3(anchor.rect.center.x, anchor.rect.yMin - Gap, 0f));
+            local = canvasRt.InverseTransformPoint(rt.position);
+        }
+        float half = rt.sizeDelta.x * 0.5f;
+        float x = Mathf.Clamp(local.x, bounds.xMin + half, bounds.xMax - half);
+        if (!Mathf.Approximately(x, local.x))
+            rt.position = canvasRt.TransformPoint(new Vector3(x, local.y, local.z));
+    }
+
+    // ---------- small helpers ----------
+
+    static RectTransform NewRect(string name, Transform parent)
+    {
+        var go = new GameObject(name);
+        var rt = go.AddComponent<RectTransform>();
+        rt.SetParent(parent, false);
+        rt.anchorMin = rt.anchorMax = new Vector2(0f, 1f);
+        rt.pivot = new Vector2(0f, 1f);
+        return rt;
+    }
+
+    static void Place(RectTransform rt, float x, float y, float w, float h)
+    {
+        rt.anchoredPosition = new Vector2(Mathf.Round(x), -Mathf.Round(y));
+        rt.sizeDelta = new Vector2(Mathf.Round(w), Mathf.Round(h));
+    }
+
+    TextMeshProUGUI Text(RectTransform parent, string text, float x, float y, float w, float size, Color color,
+        TextAlignmentOptions align = TextAlignmentOptions.TopLeft, TMP_FontAsset font = null, Material mat = null)
+    {
+        var rt = NewRect("Text", parent);
+        Place(rt, x, y, w, size * 1.4f);
+        var t = rt.gameObject.AddComponent<TextMeshProUGUI>();
+        t.font = font ?? _font;
+        t.fontSharedMaterial = mat ?? _fontMat;
+        t.fontSize = size;
+        t.color = color;
+        t.alignment = align;
+        t.enableWordWrapping = false;
+        t.overflowMode = TextOverflowModes.Overflow;
+        t.raycastTarget = false;
+        t.text = text;
+        return t;
+    }
+}
+
+// Logs the description panel's hierarchy once, so layout problems can be fixed from the log.
+internal static class LayoutLog
+{
+    public static void Dump(Transform root)
+    {
+        Plugin.Log.LogInfo("Description panel layout:");
+        Walk(root, 0);
+    }
+
+    static void Walk(Transform t, int depth)
+    {
+        if (depth > 5) return;
+        var comps = new List<string>();
+        foreach (var c in t.GetComponents<Component>())
+            if (c != null) comps.Add(c.GetIl2CppType().Name);
+        var rt = t.TryCast<RectTransform>();
+        string size = rt != null ? $" {rt.rect.width:0}x{rt.rect.height:0}" : "";
+        var tmp = t.GetComponent<TextMeshProUGUI>();
+        string txt = tmp != null ? $" text=\"{Short(tmp.text)}\" font={tmp.font?.name} size={tmp.fontSize}" : "";
+        Plugin.Log.LogInfo($"{new string(' ', depth * 2)}- {t.name} [{(t.gameObject.activeSelf ? "on" : "off")}]{size} ({string.Join(", ", comps)}){txt}");
+        for (int i = 0; i < t.childCount; i++) Walk(t.GetChild(i), depth + 1);
+    }
+
+    static string Short(string s) => s == null ? "" : (s.Length > 30 ? s.Substring(0, 30) + "..." : s).Replace("\n", " ");
+}
+
+// The v0.3 plain panel, used only if the in-tooltip block cannot be built.
+internal static class FallbackPanel
+{
+    static GUIStyle _style;
+    static Texture2D _bg;
+
+    public static void Draw()
+    {
+        float sw = Screen.width, sh = Screen.height;
+        int fontSize = Mathf.Max(12, Mathf.RoundToInt(sh / 1080f * 19f));
         if (_bg == null)
         {
             _bg = new Texture2D(1, 1);
@@ -40,128 +641,27 @@ public class Overlay : MonoBehaviour
             _bg.Apply();
             _bg.hideFlags = HideFlags.HideAndDontSave;
         }
-        if (_style == null || _styleFontSize != fontSize)
-        {
-            _style = new GUIStyle(GUI.skin.label)
-            {
-                fontSize = fontSize,
-                richText = true,
-                wordWrap = false,
-                alignment = TextAnchor.UpperLeft,
-            };
-            _style.normal.textColor = Color.white;
-            _styleFontSize = fontSize;
-        }
-    }
+        if (_style == null || _style.fontSize != fontSize)
+            _style = new GUIStyle(GUI.skin.label) { fontSize = fontSize, richText = true, wordWrap = false };
 
-    void OnGUI()
-    {
-        try
-        {
-            var ev = Event.current;
-            if (ev != null && ev.type == EventType.KeyDown && ev.keyCode == KeyCode.F8)
-            {
-                _hidden = !_hidden;
-                ev.Use();
-            }
-            if (_hidden || !ShouldShow()) return;
-            Draw();
-        }
-        catch (Exception e)
-        {
-            if (!_errorLogged) { _errorLogged = true; Plugin.Log.LogError("Overlay draw failed: " + e); }
-        }
-    }
-
-    void Draw()
-    {
-        float sw = Screen.width, sh = Screen.height;
-        int fontSize = Mathf.Max(12, Mathf.RoundToInt(sh / 1080f * 19f));
-        EnsureStyle(fontSize);
-        float lineH = fontSize * 1.35f;
-
-        // Lower part of the right-hand description panel, which is otherwise empty.
-        var area = new Rect(sw * 0.515f, sh * 0.47f, sw * 0.445f, sh * 0.47f);
-        int maxChars = Mathf.Max(30, Mathf.FloorToInt(area.width / (fontSize * 0.52f)));
-
-        var lines = BuildLines(maxChars);
-        float height = Mathf.Min(area.height, lines.Count * lineH + lineH);
-        var box = new Rect(area.x, area.y, area.width, height);
-
-        GUI.DrawTexture(box, _bg);
-        float y = box.y + lineH * 0.5f;
-        foreach (var line in lines)
-        {
-            if (y + lineH > box.yMax) break;
-            GUI.Label(new Rect(box.x + fontSize, y, box.width - fontSize * 2, lineH), line, _style);
-            y += lineH;
-        }
-    }
-
-    static string C(string color, string text) => $"<color={color}>{text}</color>";
-    static string B(string text) => $"<b>{text}</b>";
-
-    static string PartnerText(Partner p) =>
-        p.Owned ? C(Green, $"{p.Name} Lv{p.Lvl}") : C(Grey, p.Name);
-
-    static List<string> BuildLines(int maxChars)
-    {
-        var lines = new List<string>();
-        lines.Add(C(Gold, B("Evolution helper")) + C(Grey, "   F8 to hide"));
-
+        var lines = new List<string> { "<color=#F2C14E><b>Evolution helper</b></color>  <color=#9A8F99>F8 to hide</color>" };
         foreach (var o in Evo.Offers)
         {
             if (o == null) continue;
-            string tag = o.IsNew ? "new " + o.Kind : $"{o.Kind}, you have Lv{o.OwnedLvl}";
-            lines.Add(C(White, B(o.Name)) + C(Grey, $"  ({tag})"));
-
-            var useful = o.Evos.Where(e => e.Status != EvoStatus.HaveNone).ToList();
-            var other = o.Evos.Where(e => e.Status == EvoStatus.HaveNone).ToList();
-
-            if (o.Evos.Count == 0)
-                lines.Add("   " + C(Grey, "no evolutions"));
-
-            foreach (var e in useful)
-            {
-                string mark = e.Status == EvoStatus.HaveAll ? C(Green, "★ ") : C(Gold, "◐ ");
-                string partners = string.Join(" + ", e.Partners.Select(PartnerText));
-                lines.Add("   " + mark + C(e.Status == EvoStatus.HaveAll ? Green : Gold, B(e.Result)) + C(Grey, " with ") + partners);
-            }
-
-            if (other.Count > 0)
-            {
-                var parts = other.Select(e => $"{e.Result} ({string.Join("+", e.Partners.Select(p => p.Name))})");
-                foreach (var w in Wrap((useful.Count > 0 ? "also: " : "needs: ") + string.Join(", ", parts), maxChars - 3))
-                    lines.Add("   " + C(Grey, w));
-            }
+            lines.Add($"<b>{o.Self.Name}</b>");
+            foreach (var e in o.Evos.Where(e => e.Status != EvoStatus.HaveNone))
+                lines.Add($"   <color=#8FE388>{e.Result.Name}</color> with {string.Join(" + ", e.Partners.Select(p => p.Name))}");
         }
 
-        if (Evo.Pairs.Count > 0)
+        float lineH = fontSize * 1.35f;
+        var box = new Rect(sw * 0.515f, sh * 0.47f, sw * 0.445f, Mathf.Min(sh * 0.47f, (lines.Count + 1) * lineH));
+        GUI.DrawTexture(box, _bg);
+        float y = box.y + lineH * 0.5f;
+        foreach (var l in lines)
         {
-            lines.Add("");
-            lines.Add(C(Gold, B("You can already make")) + C(Grey, $"  (all ingredients Lv{Evo.EvoLevel}, then a Fusion Reactor)"));
-            foreach (var p in Evo.Pairs)
-            {
-                string parts = string.Join(" + ", p.Parts.Select(x =>
-                    C(x.Lvl >= Evo.EvoLevel ? Green : White, $"{x.Name} Lv{x.Lvl}/{Evo.EvoLevel}")));
-                lines.Add("   " + C(Green, B(p.Result)) + C(Grey, ": ") + parts);
-            }
+            if (y + lineH > box.yMax) break;
+            GUI.Label(new Rect(box.x + fontSize, y, box.width - fontSize * 2, lineH), l, _style);
+            y += lineH;
         }
-        return lines;
-    }
-
-    static IEnumerable<string> Wrap(string text, int width)
-    {
-        var line = "";
-        foreach (var word in text.Split(' '))
-        {
-            if (line.Length > 0 && line.Length + 1 + word.Length > width)
-            {
-                yield return line;
-                line = word;
-            }
-            else line = line.Length == 0 ? word : line + " " + word;
-        }
-        if (line.Length > 0) yield return line;
     }
 }

@@ -14,7 +14,7 @@ namespace EvoHelper;
 [BepInPlugin("schuah.ballxpit.evohelper", "EvoHelper", Version)]
 public class Plugin : BasePlugin
 {
-    public const string Version = "0.3.0";
+    public const string Version = "0.6.0";
 
     internal static new ManualLogSource Log;
     internal static bool RecipesDumped;
@@ -24,7 +24,7 @@ public class Plugin : BasePlugin
         Log = base.Log;
         Harmony.CreateAndPatchAll(typeof(Patches));
         AddComponent<Overlay>();
-        Log.LogInfo($"EvoHelper {Version} loaded. F8 toggles the panel on the pick screen.");
+        Log.LogInfo($"EvoHelper {Version} loaded. F8 toggles the evolution block on the pick screen.");
     }
 
     // Writes the game's own recipe list next to the DLL once per session, for checking.
@@ -68,11 +68,11 @@ public class Plugin : BasePlugin
         {
             if (o == null) continue;
             var useful = o.Evos.Where(e => e.Status != EvoStatus.HaveNone)
-                .Select(e => $"{e.Result} [{e.Status}] with {string.Join(" + ", e.Partners.Select(p => p.Owned ? $"{p.Name} Lv{p.Lvl}" : p.Name))}");
-            Log.LogInfo($"  Offer [{o.Kind}] {o.Name} new={o.IsNew} ownedLv={o.OwnedLvl}; {o.Evos.Count} evos; useful: {(useful.Any() ? string.Join("; ", useful) : "-")}");
+                .Select(e => $"{e.Result.Name} [{e.Status}] with {string.Join(" + ", e.Partners.Select(p => p.Owned ? $"{p.Name} Lv{p.Lvl}" : p.Name))}");
+            Log.LogInfo($"  Offer [{o.Kind}] {o.Self.Name} new={o.IsNew} ownedLv={o.Self.Lvl}; {o.Evos.Count} evos; useful: {(useful.Any() ? string.Join("; ", useful) : "-")}");
         }
         foreach (var p in Evo.Pairs)
-            Log.LogInfo($"  Can make {p.Result}: {string.Join(" + ", p.Parts.Select(x => $"{x.Name} Lv{x.Lvl}"))}");
+            Log.LogInfo($"  Can make {p.Result.Name}: {string.Join(" + ", p.Parts.Select(x => $"{x.Name} Lv{x.Lvl}"))}");
     }
 }
 
@@ -96,6 +96,15 @@ internal static class Patches
     private static void OnLevelUpClosed()
     {
         try { Evo.Clear(); }
+        catch (Exception e) { Plugin.Log.LogError(e); }
+    }
+
+    // Which offer the player is looking at (mouse hover or controller highlight).
+    [HarmonyPostfix]
+    [HarmonyPatch(typeof(LevelUpUI), nameof(LevelUpUI.HoverBtn))]
+    private static void OnOfferHovered(LevelUpBtn bItem)
+    {
+        try { if (bItem != null) Evo.SetHovered(bItem.ChoiceIdx); }
         catch (Exception e) { Plugin.Log.LogError(e); }
     }
 
