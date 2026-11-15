@@ -539,26 +539,36 @@ public class Overlay : MonoBehaviour
         rt.SetAsLastSibling();
     }
 
-    // Above the icon; below it if there is no room; kept inside the screen horizontally.
+    // Icon in the bottom half of the screen: tooltip goes above it; top half: below it.
+    // Then nudged so it stays fully on screen.
     void PlacePopup(RectTransform rt, RectTransform anchor, Transform canvasRoot)
     {
-        rt.pivot = new Vector2(0.5f, 0f);
-        rt.position = anchor.TransformPoint(new Vector3(anchor.rect.center.x, anchor.rect.yMax + Gap, 0f));
         var canvasRt = canvasRoot.TryCast<RectTransform>();
-        if (canvasRt == null) return;
+        var anchorCenter = anchor.TransformPoint(anchor.rect.center);
+        bool iconInBottomHalf = canvasRt == null || canvasRt.InverseTransformPoint(anchorCenter).y < canvasRt.rect.center.y;
 
-        var local = canvasRt.InverseTransformPoint(rt.position);
-        var bounds = canvasRt.rect;
-        if (local.y + rt.sizeDelta.y > bounds.yMax)
+        if (iconInBottomHalf)
+        {
+            rt.pivot = new Vector2(0.5f, 0f);
+            rt.position = anchor.TransformPoint(new Vector3(anchor.rect.center.x, anchor.rect.yMax + Gap, 0f));
+        }
+        else
         {
             rt.pivot = new Vector2(0.5f, 1f);
             rt.position = anchor.TransformPoint(new Vector3(anchor.rect.center.x, anchor.rect.yMin - Gap, 0f));
-            local = canvasRt.InverseTransformPoint(rt.position);
         }
-        float half = rt.sizeDelta.x * 0.5f;
-        float x = Mathf.Clamp(local.x, bounds.xMin + half, bounds.xMax - half);
-        if (!Mathf.Approximately(x, local.x))
-            rt.position = canvasRt.TransformPoint(new Vector3(x, local.y, local.z));
+        if (canvasRt == null) return;
+
+        // Keep inside the screen (canvas-local units; the tooltip's size is in the same units).
+        var local = canvasRt.InverseTransformPoint(rt.position);
+        var b = canvasRt.rect;
+        float w = rt.sizeDelta.x, h = rt.sizeDelta.y;
+        float x = Mathf.Clamp(local.x, b.xMin + w * 0.5f, Mathf.Max(b.xMin + w * 0.5f, b.xMax - w * 0.5f));
+        float bottom = iconInBottomHalf ? local.y : local.y - h;
+        float clampedBottom = Mathf.Clamp(bottom, b.yMin, Mathf.Max(b.yMin, b.yMax - h));
+        float y = local.y + (clampedBottom - bottom);
+        if (!Mathf.Approximately(x, local.x) || !Mathf.Approximately(y, local.y))
+            rt.position = canvasRt.TransformPoint(new Vector3(x, y, local.z));
     }
 
     // ---------- small helpers ----------
