@@ -17,6 +17,7 @@ public class Hud : MonoBehaviour
     public Hud(IntPtr ptr) : base(ptr) { }
 
     const float Window = 5f;          // seconds of game time the DPS is averaged over
+    const float Refresh = 0.5f;       // real seconds between DPS text updates, so it stays readable
 
     static bool _hidden;
     bool _errorLogged, _valuesLogged;
@@ -26,6 +27,7 @@ public class Hud : MonoBehaviour
 
     readonly Queue<(float t, long dmg)> _samples = new();
     float _lastTime = -1f;
+    float _nextDpsText;
     long _lastDmg = -1;
 
     void OnGUI()
@@ -105,6 +107,8 @@ public class Hud : MonoBehaviour
             float dt = now - first.t;
             if (dt > 0.5f) dps = (long)((dmg - first.dmg) / dt);
         }
+        if (Time.unscaledTime < _nextDpsText) return;
+        _nextDpsText = Time.unscaledTime + Refresh;
         SetText(_dps, _dpsShadow, $"DPS <color=#F2C14E>{Fmt(dps)}</color>");
     }
 
