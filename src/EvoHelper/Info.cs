@@ -38,6 +38,26 @@ internal static class Further
         Cache[inf.Slug] = list;
         return list;
     }
+
+    static readonly Dictionary<string, List<List<UpgradeInfo>>> MadeCache = new();
+
+    // The ingredient sets that make `inf` (empty for a base item).
+    public static List<List<UpgradeInfo>> MadeFrom(UpgradeInfo inf)
+    {
+        if (inf == null) return new();
+        if (MadeCache.TryGetValue(inf.Slug, out var hit)) return hit;
+        var list = new List<List<UpgradeInfo>>();
+        if (inf.MergeComponents != null)
+            foreach (var set in inf.MergeComponents)
+            {
+                if (set == null) continue;
+                var parts = new List<UpgradeInfo>();
+                foreach (var c in set) if (c != null) parts.Add(c);
+                if (parts.Count > 0) list.Add(parts);
+            }
+        MadeCache[inf.Slug] = list;
+        return list;
+    }
 }
 
 // The game's own description text for an upgrade, with its numbers filled in the same

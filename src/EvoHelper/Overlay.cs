@@ -541,13 +541,30 @@ public class Overlay : MonoBehaviour
         string text = sb.ToString();
 
         var recipes = Further.For(item.Info);
+        var madeFrom = Further.MadeFrom(item.Info);
         var t = Text(rt, text, pad, pad, maxW, _fs, _textColor, TextAlignmentOptions.Top);
         t.enableWordWrapping = true;
-        float textW = recipes.Count > 0 ? maxW : Mathf.Min(maxW, t.GetPreferredValues(text).x + 2f);
+        float textW = recipes.Count > 0 || madeFrom.Count > 0 ? maxW : Mathf.Min(maxW, t.GetPreferredValues(text).x + 2f);
         float textH = t.GetPreferredValues(text, textW, 0f).y;
         Place(t.rectTransform, pad, pad, textW, textH);
         float y = pad + textH;
         float w = textW;
+
+        // "Made from": the recipe(s) that create this item, ingredients hoverable too.
+        if (madeFrom.Count > 0)
+        {
+            y += Gap;
+            Text(rt, "Made from", pad, y, w, _hdrSize, _hdrColor, TextAlignmentOptions.Center, _hdrFont, _hdrMat);
+            y += _hdrSize * 1.8f;
+            bool anyUndiscoveredM = false;
+            var self = Evo.MakeItem(item.Info);
+            var chipsM = madeFrom.Select(set =>
+            {
+                var parts = set.Select(Evo.MakeItem).ToList();
+                return (parts: parts, result: self, bg: parts.All(x => x.Owned) ? ChipBgReady : ChipBg, showLvlOf3: false);
+            }).ToList();
+            y = FlowChips(rt, p.Icons, chipsM, pad, y, w, ref anyUndiscoveredM, iconSize: TooltipIcon) - Gap;
+        }
 
         // "Evolves further" as icon chips, hoverable for the next tooltip.
         if (recipes.Count > 0)
