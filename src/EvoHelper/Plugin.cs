@@ -14,7 +14,7 @@ namespace EvoHelper;
 [BepInPlugin("schuah.ballxpit.evohelper", "EvoHelper", Version)]
 public class Plugin : BasePlugin
 {
-    public const string Version = "0.8.0";
+    public const string Version = "0.9.0";
 
     internal static new ManualLogSource Log;
     internal static bool RecipesDumped;
@@ -24,7 +24,8 @@ public class Plugin : BasePlugin
         Log = base.Log;
         Harmony.CreateAndPatchAll(typeof(Patches));
         AddComponent<Overlay>();
-        Log.LogInfo($"EvoHelper {Version} loaded. F8 toggles the evolution block on the pick screen.");
+        AddComponent<Hud>();
+        Log.LogInfo($"EvoHelper {Version} loaded. F8 toggles the evolution block, F9 the DPS / bar numbers.");
     }
 
     // Writes the game's own recipe list next to the DLL once per session, for checking.
