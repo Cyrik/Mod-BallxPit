@@ -15,6 +15,7 @@ internal sealed class Item
     public string Name;
     public int Lvl;            // displayed level (1-based); 0 = not owned
     public bool Discovered;    // in the player's encyclopedia
+    public bool IsBall;        // a ball (HeroInfo), not a passive
     public bool Owned => Lvl > 0;
 }
 
@@ -99,6 +100,7 @@ internal static class Evo
         Name = inf.Name,
         Lvl = Owned.TryGetValue(inf.Slug, out var l) ? l : 0,
         Discovered = IsDiscovered(inf),
+        IsBall = inf.TryCast<HeroInfo>() != null,
     };
 
     public static void RefreshOwned()

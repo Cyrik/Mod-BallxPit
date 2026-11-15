@@ -226,11 +226,14 @@ public class Overlay : MonoBehaviour
             }
         }
 
-        if (Evo.Pairs.Count > 0)
+        // Only the kind being looked at: ball pairs for a ball, passive pairs for a passive.
+        bool wantBalls = offer == null || offer.Self.IsBall;
+        var pairs = Evo.Pairs.Where(p => p.Result.IsBall == wantBalls).ToList();
+        if (pairs.Count > 0)
         {
             y += Gap;
             y = Header($"Ready to evolve (each Lv{Evo.EvoLevel})", y, width);
-            var chips = Evo.Pairs.Select(p => (parts: p.Parts, result: p.Result, bg: ChipBgReady, showLvlOf3: true)).ToList();
+            var chips = pairs.Select(p => (parts: p.Parts, result: p.Result, bg: ChipBgReady, showLvlOf3: true)).ToList();
             y = FlowChips(_root, _icons, chips, 0, y, width, ref anyUndiscovered);
         }
 
