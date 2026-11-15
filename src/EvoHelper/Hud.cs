@@ -7,9 +7,9 @@ using UnityEngine.UI;
 namespace EvoHelper;
 
 // In-run HUD additions, read-only:
-//  - DPS readout at the bottom middle of the screen (damage your balls dealt over the
+//  - DPS readout at the top middle of the screen (damage your balls dealt over the
 //    last few seconds of game time, from the game's own per-ball damage stats).
-//  - The health bar's own numbers kept visible (the game shows them only on hover).
+//  - "current / max" numbers on the health orb.
 //  - "current / needed" numbers on the XP bar.
 // F9 toggles all three.
 public class Hud : MonoBehaviour
@@ -20,9 +20,11 @@ public class Hud : MonoBehaviour
     const float Refresh = 0.5f;       // real seconds between DPS text updates, so it stays readable
 
     static bool _hidden;
-    bool _errorLogged, _valuesLogged;
+    bool _errorLogged;
 
-    TextMeshProUGUI _dps, _dpsShadow, _xp, _xpShadow;
+    TextMeshProUGUI _dps, _dpsShadow, _xp, _xpShadow, _hp, _hpShadow;
+    Canvas _root;
+    int _xpLogs, _lastLoggedXp = -1;
     InGameUI _builtFor;
 
     readonly Queue<(float t, long dmg)> _samples = new();
@@ -57,11 +59,8 @@ public class Hud : MonoBehaviour
 
         if (_builtFor == null || _builtFor.Pointer != ui.Pointer || _dps == null) Build(ui);
 
-        // Health numbers: keep the game's own value text showing.
-        if (!_hidden && ui.GrpHealthValues != null) ui.GrpHealthValues.alpha = 1f;
-
         UpdateDps(battle);
-        UpdateXp(ui, battle);
+        UpdateBars(ui, battle);
 
         bool show = !_hidden && ui.gameObject.activeInHierarchy;
         SetVisible(show);
@@ -119,21 +118,56 @@ public class Hud : MonoBehaviour
         return t;
     }
 
-    // ---------- XP ----------
+    // ---------- health / XP numbers ----------
 
-    void UpdateXp(InGameUI ui, BattleSaveData b)
+    void UpdateBars(InGameUI ui, BattleSaveData b)
     {
         var mgr = UpgradeMgr.I;
-        if (mgr == null || _xp == null) return;
-        int need = mgr.TgtXP;
-        int cur = Mathf.FloorToInt(b.CurXP);
-        SetText(_xp, _xpShadow, need > 0 ? $"{Fmt(cur)} / {Fmt(need)}" : Fmt(cur));
+        if (mgr == null) return;
 
-        if (!_valuesLogged && need > 0)
+        if (_hp != null)
         {
-            _valuesLogged = true;
-            Plugin.Log.LogInfo($"HUD check: XP {b.CurXP}/{need} (bar fill {ui.XPFill?.fillAmount}), HP {b.CurHealth}/{mgr.MaxHealth}");
+            // Prefer the game's own (hidden) value text; fall back to the run data.
+            string cur = ui.TxtCurHealth != null ? ui.TxtCurHealth.text : null;
+            string max = ui.TxtTotalHealth != null ? ui.TxtTotalHealth.text : null;
+            string text = !string.IsNullOrWhiteSpace(cur) && !string.IsNullOrWhiteSpace(max)
+                ? $"{cur.Trim().TrimStart('/')} / {max.Trim().TrimStart('/').Trim()}"
+                : $"{Fmt(Mathf.CeilToInt(b.CurHealth))} / {Fmt(mgr.MaxHealth)}";
+            SetText(_hp, _hpShadow, text);
+            Follow(ui.HealthFill != null ? ui.HealthFill.rectTransform : null, _hp, 0f);
         }
+
+        if (_xp != null)
+        {
+            int need = mgr.TgtXP;
+            int curXp = Mathf.FloorToInt(b.CurXP);
+            SetText(_xp, _xpShadow, need > 0 ? $"{Fmt(curXp)} / {Fmt(need)}" : Fmt(curXp));
+            Follow(ui.XPFill != null ? ui.XPFill.rectTransform : null, _xp, 0f);
+
+            if (_xpLogs < 6 && curXp != _lastLoggedXp)
+            {
+                _xpLogs++;
+                _lastLoggedXp = curXp;
+                Plugin.Log.LogInfo($"HUD check: XP {b.CurXP}/{need} (bar fill {ui.XPFill?.fillAmount}), HP {b.CurHealth}/{mgr.MaxHealth}, game HP text '{ui.TxtCurHealth?.text}' '{ui.TxtTotalHealth?.text}'");
+            }
+        }
+    }
+
+    // Keeps our label centred on a game HUD element, whatever canvas or mask it sits in.
+    void Follow(RectTransform target, TextMeshProUGUI label, float yOffset)
+    {
+        var rt = label.transform.parent.Cast<RectTransform>();
+        if (target == null || !target.gameObject.activeInHierarchy) { rt.gameObject.SetActive(false); return; }
+        var tCanvas = target.GetComponentInParent<Canvas>();
+        Camera tCam = tCanvas == null || tCanvas.renderMode == RenderMode.ScreenSpaceOverlay ? null : tCanvas.worldCamera;
+        var rootRt = _root.transform.Cast<RectTransform>();
+        Camera rCam = _root.renderMode == RenderMode.ScreenSpaceOverlay ? null : _root.worldCamera;
+
+        var world = target.TransformPoint(target.rect.center);
+        var screen = RectTransformUtility.WorldToScreenPoint(tCam, world);
+        if (RectTransformUtility.ScreenPointToLocalPointInRectangle(rootRt, screen, rCam, out var local))
+            rt.anchoredPosition = local + new Vector2(0f, yOffset);
+        if (!_hidden && !rt.gameObject.activeSelf) rt.gameObject.SetActive(true);
     }
 
     static string Fmt(long v) =>
@@ -147,7 +181,8 @@ public class Hud : MonoBehaviour
     {
         if (_dps != null) Destroy(_dps.transform.parent.gameObject);
         if (_xp != null) Destroy(_xp.transform.parent.gameObject);
-        _dps = _xp = null;
+        if (_hp != null) Destroy(_hp.transform.parent.gameObject);
+        _dps = _xp = _hp = null;
         _builtFor = ui;
         _samples.Clear();
 
@@ -156,25 +191,37 @@ public class Hud : MonoBehaviour
         var canvas = src.canvas != null ? src.canvas.rootCanvas : null;
         if (canvas == null) throw new Exception("HUD canvas missing");
 
-        // DPS: bottom middle of the screen.
-        var dpsRt = NewRect("EvoHelperDPS", canvas.transform);
-        dpsRt.anchorMin = dpsRt.anchorMax = dpsRt.pivot = new Vector2(0.5f, 0f);
-        dpsRt.anchoredPosition = new Vector2(0f, 12f);
-        dpsRt.sizeDelta = new Vector2(400f, src.fontSize * 1.6f);
-        (_dps, _dpsShadow) = ShadowText(dpsRt, src, src.fontSize * 1.1f);
+        _root = canvas;
 
-        // XP numbers: centred on the XP bar.
-        if (ui.XPFill != null)
-        {
-            var bar = ui.XPFill.rectTransform;
-            var xpRt = NewRect("EvoHelperXP", bar.parent);
-            xpRt.anchorMin = bar.anchorMin; xpRt.anchorMax = bar.anchorMax; xpRt.pivot = bar.pivot;
-            xpRt.anchoredPosition = bar.anchoredPosition; xpRt.sizeDelta = bar.sizeDelta;
-            xpRt.localScale = Vector3.one;
-            xpRt.SetAsLastSibling();
-            (_xp, _xpShadow) = ShadowText(xpRt, src, src.fontSize * 0.8f);
-        }
+        // DPS: top middle of the screen.
+        var dpsRt = NewRect("EvoHelperDPS", canvas.transform);
+        dpsRt.anchorMin = dpsRt.anchorMax = dpsRt.pivot = new Vector2(0.5f, 1f);
+        dpsRt.anchoredPosition = new Vector2(0f, -10f);
+        dpsRt.sizeDelta = new Vector2(300f, src.fontSize * 1.2f);
+        OnTop(dpsRt);
+        (_dps, _dpsShadow) = ShadowText(dpsRt, src, src.fontSize * 0.75f);
+
+        // Health and XP numbers: on the root canvas, above everything, moved onto the bars each frame.
+        (_hp, _hpShadow) = Label("EvoHelperHP", canvas, src, src.fontSize * 0.7f);
+        (_xp, _xpShadow) = Label("EvoHelperXP", canvas, src, src.fontSize * 0.6f);
         Plugin.Log.LogInfo($"HUD built on canvas '{canvas.name}' (XP bar {(ui.XPFill != null ? ui.XPFill.name : "missing")}).");
+    }
+
+    static (TextMeshProUGUI, TextMeshProUGUI) Label(string name, Canvas canvas, TextMeshProUGUI src, float size)
+    {
+        var rt = NewRect(name, canvas.transform);
+        rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0.5f, 0.5f);
+        rt.sizeDelta = new Vector2(200f, size * 1.5f);
+        OnTop(rt);
+        return ShadowText(rt, src, size);
+    }
+
+    // Own sorting layer so nested HUD canvases (the health orb) can't draw over it.
+    static void OnTop(RectTransform rt)
+    {
+        var c = rt.gameObject.AddComponent<Canvas>();
+        c.overrideSorting = true;
+        c.sortingOrder = 1000;
     }
 
     static RectTransform NewRect(string name, Transform parent)
@@ -222,6 +269,11 @@ public class Hud : MonoBehaviour
     void SetVisible(bool on)
     {
         if (_dps != null && _dps.transform.parent.gameObject.activeSelf != on) _dps.transform.parent.gameObject.SetActive(on);
-        if (_xp != null && _xp.transform.parent.gameObject.activeSelf != on) _xp.transform.parent.gameObject.SetActive(on);
+        // HP / XP labels: Follow() shows them when their bar is visible; hide them when the HUD is off.
+        if (!on)
+        {
+            if (_xp != null) _xp.transform.parent.gameObject.SetActive(false);
+            if (_hp != null) _hp.transform.parent.gameObject.SetActive(false);
+        }
     }
 }
