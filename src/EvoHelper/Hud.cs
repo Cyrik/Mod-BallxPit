@@ -135,7 +135,7 @@ public class Hud : MonoBehaviour
                 ? $"{cur.Trim().TrimStart('/')} / {max.Trim().TrimStart('/').Trim()}"
                 : $"{Fmt(Mathf.CeilToInt(b.CurHealth))} / {Fmt(mgr.MaxHealth)}";
             SetText(_hp, _hpShadow, text);
-            Follow(ui.HealthFill != null ? ui.HealthFill.rectTransform : null, _hp, 0f);
+            Follow(ui.HealthFill != null ? ui.HealthFill.rectTransform : null, _hp, false);   // dead centre of the orb
         }
 
         if (_xp != null)
@@ -145,7 +145,7 @@ public class Hud : MonoBehaviour
             float shown = ui._displayedXP;
             int curXp = Mathf.FloorToInt(Mathf.Max(shown, 0f));
             SetText(_xp, _xpShadow, need > 0 ? $"{Fmt(curXp)} / {Fmt(need)}" : Fmt(curXp));
-            Follow(ui.XPFill != null ? ui.XPFill.rectTransform : null, _xp, 0f);
+            Follow(ui.WrapperXP != null ? ui.WrapperXP : ui.XPFill?.rectTransform, _xp, true);   // just above the XP tower
 
             if (_xpLogs < 6 && curXp != _lastLoggedXp)
             {
@@ -158,12 +158,15 @@ public class Hud : MonoBehaviour
 
     // Keeps our label centred on a game HUD element. Both live under the same root canvas,
     // so a plain world -> canvas-local conversion is exact (no cameras involved).
-    void Follow(RectTransform target, TextMeshProUGUI label, float yOffset)
+    void Follow(RectTransform target, TextMeshProUGUI label, bool above)
     {
         var rt = label.transform.parent.Cast<RectTransform>();
         if (target == null || !target.gameObject.activeInHierarchy) { rt.gameObject.SetActive(false); return; }
         var rootRt = _root.transform.Cast<RectTransform>();
-        Vector3 local = rootRt.InverseTransformPoint(target.TransformPoint(target.rect.center));
+        var r = target.rect;
+        var point = above ? new Vector2(r.center.x, r.yMax) : r.center;
+        Vector3 local = rootRt.InverseTransformPoint(target.TransformPoint(point));
+        float yOffset = above ? rt.sizeDelta.y * 0.5f + 4f : 0f;
         // Our labels are anchored at the canvas centre; convert from pivot-relative to that.
         Vector2 centre = rootRt.rect.center;
         rt.anchoredPosition = new Vector2(local.x - centre.x, local.y - centre.y + yOffset);
