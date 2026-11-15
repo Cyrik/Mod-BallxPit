@@ -1,0 +1,125 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using BepInEx;
+using BepInEx.Logging;
+using BepInEx.Unity.IL2CPP;
+using HarmonyLib;
+
+namespace EvoHelper;
+
+// Read-only helper: shows what each offered ball/passive can evolve into.
+// It never changes game state or save files.
+[BepInPlugin("schuah.ballxpit.evohelper", "EvoHelper", Version)]
+public class Plugin : BasePlugin
+{
+    public const string Version = "0.3.0";
+
+    internal static new ManualLogSource Log;
+    internal static bool RecipesDumped;
+
+    public override void Load()
+    {
+        Log = base.Log;
+        Harmony.CreateAndPatchAll(typeof(Patches));
+        AddComponent<Overlay>();
+        Log.LogInfo($"EvoHelper {Version} loaded. F8 toggles the panel on the pick screen.");
+    }
+
+    // Writes the game's own recipe list next to the DLL once per session, for checking.
+    internal static void DumpRecipes()
+    {
+        if (RecipesDumped || InfoDB.I == null) return;
+        RecipesDumped = true;
+
+        var lines = new List<string>();
+        void Dump(string kind, IEnumerable<UpgradeInfo> infos)
+        {
+            foreach (var inf in infos)
+            {
+                var sets = inf.MergeComponents;
+                if (sets == null || sets.Length == 0) continue;
+                foreach (var set in sets)
+                {
+                    if (set == null || set.Length == 0) continue;
+                    var parts = new List<string>();
+                    foreach (var c in set) parts.Add(c == null ? "?" : c.Name);
+                    lines.Add($"{kind}\t{string.Join(" + ", parts)}\t->\t{inf.Name}\t(inGame={inf.IsInGame}, dlc={inf.DLCVersion})");
+                }
+            }
+        }
+
+        var heroes = new List<UpgradeInfo>();
+        foreach (var h in InfoDB.I.Heroes) heroes.Add(h);
+        var passives = new List<UpgradeInfo>();
+        foreach (var p in InfoDB.I.Passives) passives.Add(p);
+        Dump("BALL", heroes);
+        Dump("PASSIVE", passives);
+
+        var path = Path.Combine(Paths.PluginPath, "EvoHelper", "recipes-dump.tsv");
+        File.WriteAllLines(path, lines);
+        Log.LogInfo($"Dumped {lines.Count} recipes to {path}");
+    }
+
+    internal static void LogBatch()
+    {
+        foreach (var o in Evo.Offers)
+        {
+            if (o == null) continue;
+            var useful = o.Evos.Where(e => e.Status != EvoStatus.HaveNone)
+                .Select(e => $"{e.Result} [{e.Status}] with {string.Join(" + ", e.Partners.Select(p => p.Owned ? $"{p.Name} Lv{p.Lvl}" : p.Name))}");
+            Log.LogInfo($"  Offer [{o.Kind}] {o.Name} new={o.IsNew} ownedLv={o.OwnedLvl}; {o.Evos.Count} evos; useful: {(useful.Any() ? string.Join("; ", useful) : "-")}");
+        }
+        foreach (var p in Evo.Pairs)
+            Log.LogInfo($"  Can make {p.Result}: {string.Join(" + ", p.Parts.Select(x => $"{x.Name} Lv{x.Lvl}"))}");
+    }
+}
+
+internal static class Patches
+{
+    [HarmonyPostfix]
+    [HarmonyPatch(typeof(LevelUpUI), nameof(LevelUpUI.Activate))]
+    private static void OnLevelUpOpened(LevelUpType t)
+    {
+        try
+        {
+            Plugin.Log.LogInfo($"Level-up screen opened (type {t}).");
+            Plugin.DumpRecipes();
+            Plugin.LogBatch();
+        }
+        catch (Exception e) { Plugin.Log.LogError(e); }
+    }
+
+    [HarmonyPostfix]
+    [HarmonyPatch(typeof(LevelUpUI), nameof(LevelUpUI.Deactivate))]
+    private static void OnLevelUpClosed()
+    {
+        try { Evo.Clear(); }
+        catch (Exception e) { Plugin.Log.LogError(e); }
+    }
+
+    [HarmonyPostfix]
+    [HarmonyPatch(typeof(LevelUpBtn), nameof(LevelUpBtn.SetHero))]
+    private static void OnBallOffered(LevelUpBtn __instance, int idx)
+    {
+        try { Evo.SetOffer(idx, "ball", __instance); }
+        catch (Exception e) { Plugin.Log.LogError(e); }
+    }
+
+    [HarmonyPostfix]
+    [HarmonyPatch(typeof(LevelUpBtn), nameof(LevelUpBtn.SetPassive))]
+    private static void OnPassiveOffered(LevelUpBtn __instance, int idx)
+    {
+        try { Evo.SetOffer(idx, "passive", __instance); }
+        catch (Exception e) { Plugin.Log.LogError(e); }
+    }
+
+    [HarmonyPostfix]
+    [HarmonyPatch(typeof(LevelUpBtn), nameof(LevelUpBtn.SetUpgrade))]
+    private static void OnUpgradeOffered(LevelUpBtn __instance, int idx)
+    {
+        try { Evo.SetOffer(idx, "upgrade", __instance); }
+        catch (Exception e) { Plugin.Log.LogError(e); }
+    }
+}

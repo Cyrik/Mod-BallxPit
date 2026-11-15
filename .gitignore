@@ -1,0 +1,7 @@
+bin/
+obj/
+*.user
+.vs/
+# Personal save files and game-generated dumps stay local
+save-backup/
+*.tsv
