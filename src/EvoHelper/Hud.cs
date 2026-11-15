@@ -16,7 +16,7 @@ public class Hud : MonoBehaviour
 {
     public Hud(IntPtr ptr) : base(ptr) { }
 
-    const float Window = 5f;          // seconds of game time the DPS is averaged over
+    const float Window = 2f;          // seconds of game time the DPS is averaged over
     const float Refresh = 0.5f;       // real seconds between DPS text updates, so it stays readable
 
     static bool _hidden;
