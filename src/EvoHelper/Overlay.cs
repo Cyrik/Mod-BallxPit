@@ -51,6 +51,11 @@ public class Overlay : MonoBehaviour
     }
     readonly List<Popup> _popups = new();
     const float PopupGrace = 0.3f;   // seconds a tooltip survives after the mouse leaves it
+    const float OpenDelay = 0.35f;   // seconds the mouse must rest on an icon before its tooltip opens
+    const int TooltipRows = 3;       // rows of recipes shown in a tooltip without Shift
+    float TooltipIcon => Mathf.Round(Icon * 0.6f);
+    RectTransform _pendingRt;
+    float _pendingSince;
     bool _layoutDirty;
 
     static bool ShouldShow()
@@ -240,8 +245,10 @@ public class Overlay : MonoBehaviour
         }
 
         y += Gap;
+        // The game's list does not let its layout group size children, so it reads the block's
+        // own rect height: set that too, not only the preferred height.
         if (_inLayoutGroup) { _rootLayout.preferredHeight = y; _rootLayout.minHeight = y; }
-        else _root.sizeDelta = new Vector2(_root.sizeDelta.x, y);
+        _root.sizeDelta = new Vector2(_root.sizeDelta.x, y);
 
         _layoutDirty = true;
     }
@@ -290,18 +297,29 @@ public class Overlay : MonoBehaviour
     // Lays out recipe chips left to right, wrapping to new rows.
     [HideFromIl2Cpp]
     float FlowChips(RectTransform parent, List<(RectTransform rt, Item item)> sink,
-        List<(List<Item> parts, Item result, Color bg, bool showLvlOf3)> chips, float x0, float y, float width, ref bool anyUndiscovered)
+        List<(List<Item> parts, Item result, Color bg, bool showLvlOf3)> chips, float x0, float y, float width, ref bool anyUndiscovered,
+        float iconSize = 0f, int maxRows = 0, List<int> hiddenOut = null)
     {
-        float icon = Icon, gap = Gap, pad = Mathf.Round(gap * 0.6f);
-        float arrowW = Mathf.Round(_fs * 0.9f);
+        float icon = iconSize > 0 ? iconSize : Icon;
+        float scale = icon / Icon;
+        float gap = Mathf.Max(2f, Mathf.Round(Gap * scale)), pad = Mathf.Max(1f, Mathf.Round(Gap * 0.6f * scale));
+        float arrowW = Mathf.Round(_fs * 0.9f * scale);
+        float glyph = scale < 0.9f ? _hdrSize : _fs;
         float rowH = icon + pad * 2;
         float x = 0;
+        int row = 0, shown = 0;
 
         foreach (var c in chips)
         {
             int n = c.parts.Count;
             float chipW = pad * 2 + n * icon + (n - 1) * pad + arrowW + icon;
-            if (x > 0 && x + chipW > width) { x = 0; y += rowH + gap; }
+            if (x > 0 && x + chipW > width)
+            {
+                x = 0; row++;
+                if (maxRows > 0 && row >= maxRows) break;
+                y += rowH + gap;
+            }
+            shown++;
 
             var chip = NewRect("Chip", parent);
             Place(chip, x0 + x, y, chipW, rowH);
@@ -317,19 +335,21 @@ public class Overlay : MonoBehaviour
                 ix += icon;
             }
             // Same "=" glyph and pixel font as the game's own evolution rows.
-            Text(chip, "=", ix, pad + icon * 0.5f - _fs * 0.7f, arrowW, _fs, _textColor, TextAlignmentOptions.Center, _glyphFont, _glyphMat);
+            Text(chip, "=", ix, pad + icon * 0.5f - glyph * 0.7f, arrowW, glyph, _textColor, TextAlignmentOptions.Center, _glyphFont, _glyphMat);
             ix += arrowW;
             IconAt(chip, sink, c.result, ix, pad, icon, dimIfMissing: false, lvlOf3: false, ref anyUndiscovered);
 
             // "+" badge: this result can itself evolve further (hover it for details).
             if (Further.For(c.result.Info).Count > 0)
             {
-                Text(chip, "+", ix + icon - _hdrSize * 0.9f + 1, pad + 1, _hdrSize, _fs, new Color(0, 0, 0, 0.9f), TextAlignmentOptions.Center, _glyphFont, _glyphMat);
-                Text(chip, "+", ix + icon - _hdrSize * 0.9f, pad, _hdrSize, _fs, Gold, TextAlignmentOptions.Center, _glyphFont, _glyphMat);
+                float bw = Mathf.Round(glyph * 0.66f), by = pad - Mathf.Round(glyph * 0.15f);
+                Text(chip, "+", ix + icon - bw + 1, by + 1, bw, glyph, new Color(0, 0, 0, 0.9f), TextAlignmentOptions.Center, _glyphFont, _glyphMat);
+                Text(chip, "+", ix + icon - bw, by, bw, glyph, Gold, TextAlignmentOptions.Center, _glyphFont, _glyphMat);
             }
 
             x += chipW + gap;
         }
+        hiddenOut?.Add(chips.Count - shown);
         return y + rowH + gap;
     }
 
@@ -353,7 +373,7 @@ public class Overlay : MonoBehaviour
         item.Info.ApplyIcon(img);
         if (dimIfMissing && !item.Owned) img.color = img.color * Dim;
 
-        if (item.Owned && dimIfMissing)
+        if (item.Owned && dimIfMissing && size >= 24f)   // no level badge on small tooltip icons
         {
             // Level number in the corner, with a 1-unit drop shadow (TMP outlines crash on new text here).
             string lvl = lvlOf3 ? $"{item.Lvl}/{Evo.EvoLevel}" : item.Lvl.ToString();
@@ -439,14 +459,23 @@ public class Overlay : MonoBehaviour
             if (_popups.Count > child && _popups[child].Anchor == hitRt)
             {
                 _popups[child].Touched = now;
+                _pendingRt = null;
                 if (_popups[child].Shift != _shift) RebuildPopup(child, canvas.rootCanvas.transform);
             }
-            else
+            else if (_pendingRt != hitRt)
             {
+                // Start the hover delay; passing over icons does not open anything.
+                _pendingRt = hitRt;
+                _pendingSince = now;
+            }
+            else if (now - _pendingSince >= OpenDelay)
+            {
+                _pendingRt = null;
                 ClosePopupsFrom(child);
                 OpenPopup(hitRt, hitItem, canvas.rootCanvas.transform, now);
             }
         }
+        else _pendingRt = null;
 
         // 3. Close tooltips (from the top) the mouse has left for longer than the grace period.
         while (_popups.Count > 0 && now - _popups[_popups.Count - 1].Touched > PopupGrace)
@@ -485,7 +514,7 @@ public class Overlay : MonoBehaviour
         var item = p.Item;
         p.Shift = _shift;
         float pad = Mathf.Round(_fs * 0.45f);
-        float maxW = Mathf.Round(_fs * 15f);
+        float maxW = Mathf.Round(_fs * 12f);
 
         var rt = NewRect("EvoHelperTooltip", canvasRoot);
         rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
@@ -529,8 +558,18 @@ public class Overlay : MonoBehaviour
                 var partners = r.partners.Select(Evo.MakeItem).ToList();
                 bool all = partners.All(x => x.Owned);
                 return (parts: partners, result: Evo.MakeItem(r.result), bg: all ? ChipBgReady : ChipBg, showLvlOf3: false);
-            }).ToList();
-            y = FlowChips(rt, p.Icons, chips, pad, y, w, ref anyUndiscovered) - Gap;
+            }).OrderBy(c => c.bg == ChipBgReady ? 0 : 1).ToList();
+
+            // Small icons; at most a few rows unless Shift is held.
+            var hidden = new List<int>();
+            y = FlowChips(rt, p.Icons, chips, pad, y, w, ref anyUndiscovered,
+                iconSize: TooltipIcon, maxRows: _shift ? 0 : TooltipRows, hiddenOut: hidden) - Gap;
+            if (hidden.Count > 0 && hidden[0] > 0)
+            {
+                y += Gap;
+                Text(rt, $"+{hidden[0]} more (hold Shift)", pad, y, w, _hdrSize, Grey, TextAlignmentOptions.Center, _hdrFont, _hdrMat);
+                y += _hdrSize * 1.5f;
+            }
         }
         y += pad;
         rt.sizeDelta = new Vector2(Mathf.Round(w + pad * 2), Mathf.Round(y));
