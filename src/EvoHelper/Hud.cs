@@ -169,10 +169,21 @@ public class Hud : MonoBehaviour
         rt.anchoredPosition = new Vector2(local.x - centre.x, local.y - centre.y + yOffset);
         if (!_hidden && !rt.gameObject.activeSelf) rt.gameObject.SetActive(true);
 
+        // Draw just above the bar's own art: same sorting layer, higher order.
+        var tc = target.GetComponentInParent<Canvas>();
+        var ours = rt.GetComponent<Canvas>();
+        if (tc != null && ours != null)
+        {
+            int layer = tc.sortingLayerID;
+            int order = Math.Max(tc.sortingOrder, tc.rootCanvas != null ? tc.rootCanvas.sortingOrder : 0) + 500;
+            if (ours.sortingLayerID != layer) ours.sortingLayerID = layer;
+            if (ours.sortingOrder < order) ours.sortingOrder = order;
+        }
+
         if (!_placeLogged && label == _xp)
         {
             _placeLogged = true;
-            Plugin.Log.LogInfo($"HUD place: canvas {rootRt.rect} mode {_root.renderMode}; XP bar at {rt.anchoredPosition}, HP orb at {(_hp != null ? _hp.transform.parent.Cast<RectTransform>().anchoredPosition : Vector2.zero)}");
+            Plugin.Log.LogInfo($"HUD place: canvas {rootRt.rect} mode {_root.renderMode}; XP bar at {rt.anchoredPosition}, HP orb at {(_hp != null ? _hp.transform.parent.Cast<RectTransform>().anchoredPosition : Vector2.zero)}; bar canvas '{tc?.name}' layer {tc?.sortingLayerName} order {tc?.sortingOrder}, ours layer {ours?.sortingLayerName} order {ours?.sortingOrder}");
         }
     }
 
