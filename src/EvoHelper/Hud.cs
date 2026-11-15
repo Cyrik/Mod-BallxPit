@@ -25,6 +25,7 @@ public class Hud : MonoBehaviour
     TextMeshProUGUI _dps, _dpsShadow, _xp, _xpShadow, _hp, _hpShadow;
     Canvas _root;
     int _xpLogs, _lastLoggedXp = -1;
+    bool _placeLogged;
     InGameUI _builtFor;
 
     readonly Queue<(float t, long dmg)> _samples = new();
@@ -140,7 +141,9 @@ public class Hud : MonoBehaviour
         if (_xp != null)
         {
             int need = mgr.TgtXP;
-            int curXp = Mathf.FloorToInt(b.CurXP);
+            // What the game's XP bar is showing right now (BattleSaveData.CurXP is only the saved copy).
+            float shown = ui._displayedXP;
+            int curXp = Mathf.FloorToInt(Mathf.Max(shown, 0f));
             SetText(_xp, _xpShadow, need > 0 ? $"{Fmt(curXp)} / {Fmt(need)}" : Fmt(curXp));
             Follow(ui.XPFill != null ? ui.XPFill.rectTransform : null, _xp, 0f);
 
@@ -148,26 +151,29 @@ public class Hud : MonoBehaviour
             {
                 _xpLogs++;
                 _lastLoggedXp = curXp;
-                Plugin.Log.LogInfo($"HUD check: XP {b.CurXP}/{need} (bar fill {ui.XPFill?.fillAmount}), HP {b.CurHealth}/{mgr.MaxHealth}, game HP text '{ui.TxtCurHealth?.text}' '{ui.TxtTotalHealth?.text}'");
+                Plugin.Log.LogInfo($"HUD check: XP shown {shown}, saved {b.CurXP}, need {need} (bar fill {ui.XPFill?.fillAmount}), HP {b.CurHealth}/{mgr.MaxHealth}, game HP text '{ui.TxtCurHealth?.text}' '{ui.TxtTotalHealth?.text}'");
             }
         }
     }
 
-    // Keeps our label centred on a game HUD element, whatever canvas or mask it sits in.
+    // Keeps our label centred on a game HUD element. Both live under the same root canvas,
+    // so a plain world -> canvas-local conversion is exact (no cameras involved).
     void Follow(RectTransform target, TextMeshProUGUI label, float yOffset)
     {
         var rt = label.transform.parent.Cast<RectTransform>();
         if (target == null || !target.gameObject.activeInHierarchy) { rt.gameObject.SetActive(false); return; }
-        var tCanvas = target.GetComponentInParent<Canvas>();
-        Camera tCam = tCanvas == null || tCanvas.renderMode == RenderMode.ScreenSpaceOverlay ? null : tCanvas.worldCamera;
         var rootRt = _root.transform.Cast<RectTransform>();
-        Camera rCam = _root.renderMode == RenderMode.ScreenSpaceOverlay ? null : _root.worldCamera;
-
-        var world = target.TransformPoint(target.rect.center);
-        var screen = RectTransformUtility.WorldToScreenPoint(tCam, world);
-        if (RectTransformUtility.ScreenPointToLocalPointInRectangle(rootRt, screen, rCam, out var local))
-            rt.anchoredPosition = local + new Vector2(0f, yOffset);
+        Vector3 local = rootRt.InverseTransformPoint(target.TransformPoint(target.rect.center));
+        // Our labels are anchored at the canvas centre; convert from pivot-relative to that.
+        Vector2 centre = rootRt.rect.center;
+        rt.anchoredPosition = new Vector2(local.x - centre.x, local.y - centre.y + yOffset);
         if (!_hidden && !rt.gameObject.activeSelf) rt.gameObject.SetActive(true);
+
+        if (!_placeLogged && label == _xp)
+        {
+            _placeLogged = true;
+            Plugin.Log.LogInfo($"HUD place: canvas {rootRt.rect} mode {_root.renderMode}; XP bar at {rt.anchoredPosition}, HP orb at {(_hp != null ? _hp.transform.parent.Cast<RectTransform>().anchoredPosition : Vector2.zero)}");
+        }
     }
 
     static string Fmt(long v) =>
