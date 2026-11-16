@@ -13,7 +13,9 @@ namespace EvoHelper;
 // If building the block fails, it falls back to the plain IMGUI panel from v0.3.
 public partial class Overlay : MonoBehaviour
 {
+#if !MONO
     public Overlay(IntPtr ptr) : base(ptr) { }
+#endif
 
     static readonly Color Gold = new(0.95f, 0.76f, 0.31f, 1f);
     static readonly Color Green = new(0.56f, 0.89f, 0.53f, 1f);
@@ -151,7 +153,7 @@ public partial class Overlay : MonoBehaviour
         // Font: the description text of the game's tooltip.
         TextMeshProUGUI src = null;
         if (ui.LocDetailsDesc != null) src = ui.LocDetailsDesc.GetComponent<TextMeshProUGUI>();
-        if (src == null) src = details.GetComponentInChildren<TextMeshProUGUI>(true);
+        if (src == null) src = details.transform.GetComponentsInChildren<TextMeshProUGUI>(true).FirstOrDefault();
         if (src == null) { Plugin.Log.LogWarning("No tooltip text found; using fallback panel."); return false; }
         _font = src.font;
         _fontMat = src.fontSharedMaterial;

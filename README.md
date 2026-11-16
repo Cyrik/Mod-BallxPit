@@ -80,6 +80,18 @@ dotnet build src\EvoHelper\EvoHelper.csproj -c Release -p:GameDir="C:\path\to\BA
 
 The build copies `EvoHelper.dll` into the game's `BepInEx\plugins\EvoHelper\`. Add `-p:SkipDeploy=true` to only compile (for example while the game is running, since the DLL is locked then).
 
+### macOS (Steam)
+
+The macOS version of the game is a Mono build, not IL2CPP, so the Windows DLL does not load there. `src/EvoHelper.Mono/` builds the same sources for it, against **BepInEx 5** (5.4.23.6 or newer, the `macos_universal` zip). Needs the .NET 10 SDK or newer.
+
+1. Extract BepInEx into the game folder, so `run_bepinex.sh` and the `BepInEx` folder sit next to `Balls.app`. Run `chmod +x run_bepinex.sh`.
+2. The game ships trimmed base .NET libraries, which BepInEx cannot patch with. Download the full set for the game's Unity version (`https://unity.bepinex.dev/corlibs/6000.0.62.zip` at the time of writing) and extract it into `BepInEx/unstripped_corlib`. In `run_bepinex.sh`, set `dll_search_path_override` to the full path of that folder.
+3. Build. This copies `EvoHelper.dll` into `BepInEx/plugins/EvoHelper/`. `GameDir` defaults to the standard Steam library path.
+   ```
+   dotnet build src/EvoHelper.Mono/EvoHelper.Mono.csproj -c Release -p:GameDir="/path/to/BALLxPIT"
+   ```
+4. In Steam, set the game's launch options to `"/path/to/BALLxPIT/run_bepinex.sh" %command%`. Clear them to turn all mods off.
+
 ### Source layout (`src/EvoHelper/`)
 | File | What it does |
 |---|---|

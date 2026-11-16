@@ -14,7 +14,9 @@ namespace EvoHelper;
 // F9 toggles all three.
 public class Hud : MonoBehaviour
 {
+#if !MONO
     public Hud(IntPtr ptr) : base(ptr) { }
+#endif
 
     const float Window = 3f;          // seconds of game time the DPS is averaged over
     const float Refresh = 0.5f;       // real seconds between DPS text updates, so it stays readable

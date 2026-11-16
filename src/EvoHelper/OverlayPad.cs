@@ -68,12 +68,12 @@ public partial class Overlay
 
             var dir = HeldDir(im);
             float now = Time.unscaledTime;
-            if (dir != _heldDir)
+            if (!Same(dir, _heldDir))
             {
                 _heldDir = dir;
-                if (dir != Vector2Int.zero) { Move(dir); _nextRepeat = now + RepeatDelay; }
+                if (!Same(dir, Vector2Int.zero)) { Move(dir); _nextRepeat = now + RepeatDelay; }
             }
-            else if (dir != Vector2Int.zero && now >= _nextRepeat)
+            else if (!Same(dir, Vector2Int.zero) && now >= _nextRepeat)
             {
                 Move(dir);
                 _nextRepeat = now + RepeatRate;
@@ -81,6 +81,9 @@ public partial class Overlay
         }
         finally { PadReading = false; }
     }
+
+    // Compared by component: the macOS build strips Vector2Int's equality operators.
+    static bool Same(Vector2Int a, Vector2Int b) => a.x == b.x && a.y == b.y;
 
     static Vector2Int HeldDir(InputMgr im)
     {
