@@ -250,16 +250,23 @@ public partial class Overlay
 
     // ---------- hint line ----------
 
+    // The key named in "hold ... for description": Shift, or the controller's right trigger.
+    static string DescKey()
+    {
+        if (!PadActive) return "Shift";
+        var jt = InputMgr.I.LastJoypadType;
+        return jt == JoypadType.kPS4 || jt == JoypadType.kPS5 ? "R2" : jt == JoypadType.kSwitch ? "ZR" : "RT";
+    }
+
     static string PadHint(bool inspecting)
     {
         bool ps = InputMgr.I != null && (InputMgr.I.LastJoypadType == JoypadType.kPS4 || InputMgr.I.LastJoypadType == JoypadType.kPS5);
         bool sw = InputMgr.I != null && InputMgr.I.LastJoypadType == JoypadType.kSwitch;
         string a = ps ? "Cross" : sw ? "B" : "A";
         string b = ps ? "Circle" : sw ? "A" : "B";
-        string trig = ps ? "L2/R2" : sw ? "ZL/ZR" : "LT/RT";
         string r3 = ps || sw ? "R3" : "RS";
         return inspecting
-            ? $"{a} open   {b} back   hold {trig} description"
+            ? $"{a} open   {b} back   hold {DescKey()} description"
             : $"press {r3} to inspect icons";
     }
 }

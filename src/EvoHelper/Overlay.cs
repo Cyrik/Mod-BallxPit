@@ -552,7 +552,7 @@ public partial class Overlay : MonoBehaviour
             var desc = Describe.Text(item.Info, Math.Max(0, item.Lvl - 1));
             if (!string.IsNullOrEmpty(desc)) sb.Append($"\n<size={_hdrSize}>{desc}</size>");
         }
-        else sb.Append($"\n<size={_hdrSize}><color=#9A8F99>hold Shift for description</color></size>");
+        else sb.Append($"\n<size={_hdrSize}><color=#9A8F99>hold {DescKey()} for description</color></size>");
         string text = sb.ToString();
 
         var recipes = Further.For(item.Info);
@@ -602,7 +602,7 @@ public partial class Overlay : MonoBehaviour
             if (hidden.Count > 0 && hidden[0] > 0)
             {
                 y += Gap;
-                Text(rt, $"+{hidden[0]} more (hold Shift)", pad, y, w, _hdrSize, Grey, TextAlignmentOptions.Center, _hdrFont, _hdrMat);
+                Text(rt, $"+{hidden[0]} more (hold {DescKey()})", pad, y, w, _hdrSize, Grey, TextAlignmentOptions.Center, _hdrFont, _hdrMat);
                 y += _hdrSize * 1.5f;
             }
         }

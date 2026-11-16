@@ -14,7 +14,7 @@ namespace EvoHelper;
 [BepInPlugin("schuah.ballxpit.evohelper", "EvoHelper", Version)]
 public class Plugin : BasePlugin
 {
-    public const string Version = "1.2.0";
+    public const string Version = "1.2.1";
 
     internal static new ManualLogSource Log;
     internal static bool RecipesDumped;
