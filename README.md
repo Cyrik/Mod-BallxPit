@@ -25,7 +25,26 @@ Shows evolution recipes right inside the game, so you don't need the wiki open w
 
 **Keys:** `F8` hides the evolution panel, `F9` hides the DPS and bar numbers.
 
-**Controller:** on the level-up screen, press the right stick (R3) to inspect the icons. Move between them with the d-pad or left stick; the selected icon's tooltip opens straight away. A goes into that tooltip's icons, B backs out (and leaves inspect mode at the top), hold LT/RT for descriptions. The right stick scrolls the panel. While inspecting, the game's own pick screen ignores the pad.
+## Controller
+
+Everything works on a controller too. On the level-up screen:
+
+| Button | Does |
+|---|---|
+| **R3** (click the right stick) | Start inspecting the icons in the panel (press again to stop) |
+| **D-pad / left stick** | Move between icons. The selected icon's tooltip opens straight away |
+| **A** | Go into that tooltip's icons, to follow a chain |
+| **B** | Back out one level (at the top, stops inspecting) |
+| **RT** (hold) | Show descriptions, like Shift on a keyboard |
+| **Right stick** | Scroll the panel |
+
+The panel shows these with the game's own button icons, for Xbox, PlayStation and Switch pads. While you're inspecting, the pick screen ignores the controller, so you won't pick an offer by accident. Tooltip hints say "hold RT" instead of "hold Shift" when you're on a pad.
+
+![Controller inspect mode with button hints](docs/screenshots/4-controller-inspect.png)
+
+## Where the recipes come from
+
+
 
 Recipes are read from the game's own data, not from a hand-made list, so newer balls and DLC recipes are included, and it stays correct after game updates that only change content. The mod only reads. It never changes your save or the game's state.
 
