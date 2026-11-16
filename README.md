@@ -1,47 +1,81 @@
-# BALL x PIT evolution helper (mod)
+# EvoHelper: a BALL x PIT mod
 
-A personal BepInEx mod that shows, on the level-up screen, what each offered ball can evolve into with the balls already owned.
+Shows evolution recipes right inside the game, so you don't need the wiki open while you play.
 
-## Game
+![Evolutions in the level-up tooltip](docs/screenshots/1-evolutions-panel.png)
 
-- Install: `D:\Games\BALLxPIT` (`Balls.exe`), Unity 6000.0.62f1, IL2CPP, metadata v31 (not encrypted).
-- Saves: `%USERPROFILE%\AppData\LocalLow\Kenny Sun\BALL x PIT\`
-- Save backup taken before modding: `save-backup\2026-11-15-before-bepinex\`
+## What it does
 
-## Loader
+**On the level-up screen**
+- The tooltip of each offered ball or passive lists every evolution it is part of, as icons: `partner = result`. Recipes you can already make are highlighted.
+- **Gold border** = not in your encyclopedia yet. A small **+** means the result evolves further.
+- **Ready to evolve**: the pairs you already own (each ingredient needs Lv3, then a Fusion Reactor).
 
-BepInEx 6 bleeding edge, IL2CPP x64, build `6.0.0-be.793+dbc82f0`, from builds.bepinex.dev. Installed 2026-11-15.
+**Hover any icon** for its own tooltip: what it is made from, what it evolves into next, and **hold Shift** for the game's description. Tooltips nest, so you can follow a chain all the way up or down. Move the mouse away and they close.
 
-Files it added to the game folder (nothing was overwritten):
-`BepInEx\`, `dotnet\`, `winhttp.dll`, `doorstop_config.ini`, `.doorstop_version`, `changelog.txt`
+![Nested tooltip: made from and evolves further](docs/screenshots/2-nested-tooltip.png)
 
-- **Disable the mod loader:** rename `winhttp.dll` to `winhttp.dll.off`.
-- **Remove completely:** delete the six items above.
-- Log: `D:\Games\BALLxPIT\BepInEx\LogOutput.log`
+**During a run**
+- DPS at the top of the screen (damage from your balls, averaged over the last 2 seconds).
+- Numbers on the health orb and the XP bar.
 
-## Build tools
+![DPS, health and XP numbers](docs/screenshots/3-hud-dps-hp-xp.png)
 
-.NET 8 SDK 8.0.428, user-only install (no PATH change, no admin) at `%LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe`, installed 2026-11-15 with Microsoft's signed `dotnet-install.ps1`. Call it by full path. Remove by deleting that folder.
+**Keys:** `F8` hides the evolution panel, `F9` hides the DPS and bar numbers.
 
-## Building the mod
+Recipes are read from the game's own data, not from a hand-made list, so newer balls and DLC recipes are included, and it stays correct after game updates that only change content. The mod only reads. It never changes your save or the game's state.
 
-Source: `src\EvoHelper\`. Build (also copies `EvoHelper.dll` into `D:\Games\BALLxPIT\BepInEx\plugins\EvoHelper\`):
+## Install (Windows, Steam)
+
+Find the game folder: in Steam, right-click BALL x PIT > Manage > Browse local files. It is the folder with `Balls.exe`.
+
+**Easiest: the all-in-one zip**
+1. Download `EvoHelper-vX.Y.Z-with-BepInEx.zip` from [Releases](https://github.com/DoughnutsNCookies/Mod-BallxPit/releases).
+2. Extract it into the game folder, so `winhttp.dll` and the `BepInEx` folder sit next to `Balls.exe`.
+3. Start the game. The first launch takes a minute or two longer while BepInEx prepares itself. Later launches are normal.
+
+**Already have BepInEx 6 (IL2CPP)?** Download `EvoHelper-vX.Y.Z-plugin-only.zip` and extract it into the game folder. It only adds `BepInEx\plugins\EvoHelper\EvoHelper.dll`.
+
+This mod needs **BepInEx 6 bleeding edge, IL2CPP x64** (tested with build `6.0.0-be.793`). BepInEx 5 and the Mono builds will not work.
+
+### Turn it off or uninstall
+- **Turn off all mods:** rename `winhttp.dll` in the game folder to `winhttp.dll.off`. Rename it back to turn them on again.
+- **Remove only this mod:** delete `BepInEx\plugins\EvoHelper`.
+- **Remove everything:** delete `BepInEx`, `dotnet`, `winhttp.dll`, `doorstop_config.ini`, `.doorstop_version` and `changelog.txt` from the game folder.
+
+Steam's "Verify integrity of game files" does not remove the mod.
+
+### If something goes wrong
+- After a game update, the first launch is slow again (BepInEx rebuilds its files). If the mod then stops working, the game itself should still run. Open an issue.
+- The log is `BepInEx\LogOutput.log` in the game folder. Lines from this mod start with `EvoHelper`. Attach it to any bug report.
+
+## Building from source
+
+Needs the .NET 8 SDK and a game folder with BepInEx installed and run once (it generates the `BepInEx\interop` assemblies the project references).
 
 ```
-& "$env:LOCALAPPDATA\Microsoft\dotnet\dotnet.exe" build src\EvoHelper\EvoHelper.csproj -c Release
+dotnet build src\EvoHelper\EvoHelper.csproj -c Release -p:GameDir="C:\path\to\BALL x PIT"
 ```
 
-Add `-p:SkipDeploy=true` to compile without copying (e.g. while the game is running). Close the game first when replacing an installed build (the DLL is locked while it runs). Plugins load only at game start.
+The build copies `EvoHelper.dll` into the game's `BepInEx\plugins\EvoHelper\`. Add `-p:SkipDeploy=true` to only compile (for example while the game is running, since the DLL is locked then).
 
-## What the game exposes (from a Cpp2IL dump)
+### Source layout (`src/EvoHelper/`)
+| File | What it does |
+|---|---|
+| `Plugin.cs` | Entry point and Harmony hooks on the level-up screen |
+| `Evo.cs` | Recipe logic: owned items and levels, offers, ready pairs, encyclopedia check |
+| `Overlay.cs` | The evolutions block in the game's tooltip, icon chips, scrolling, nested tooltips |
+| `Info.cs` | "Made from" / "evolves further" lookups and the game's description text |
+| `Hud.cs` | DPS, health and XP numbers |
 
-- `InfoDB.I.Heroes` / `InfoDB.I.Passives`: every ball ("Hero") and passive.
-- `UpgradeInfo.MergeComponents` (`UpgradeInfo[][]`): ingredient sets that make an evolution. `UpgradeInfo.Evolutions`: what it can become. `HasMergeCombo(a, b)`.
-- `UpgradeMgr.I.GetHero(HeroType)`: owned ball instances.
-- `LevelUpUI.I`: the level-up screen. `Btns[]` (`LevelUpBtn.TgtInfo` = offered ball), `_choices`, `CurHeroItems`. `Activate(LevelUpType)` runs when it opens.
+### Game classes used (from a Cpp2IL dump)
+- `InfoDB.I.Heroes` / `.Passives`: every ball and passive. `UpgradeInfo.MergeComponents` (ingredient sets) and `.Evolutions`.
+- `UpgradeMgr.I.GetHero/GetPassive`: what you own and at which level. `UpgradeMgr.I.TgtXP`, `.MaxHealth`.
+- `LevelUpUI` / `LevelUpBtn`: the pick screen and its offers. `SaveMgr.I.MetaSave.*Stats[i].NumObtained`: encyclopedia.
+- `InGameUI.I`: HUD (`HealthFill`, `XPFill`, `_displayedXP`). `BattleSaveData.I.Heroes[*].StatData`: damage dealt per ball.
 
-### Recipe dump (v0.1, 2026-11-15)
+## Credits and licence
 
-The game's own data has 118 ball recipes and 39 passive recipes. The `dlc=0` set matches the two community charts (Naturalist update, Sep 2026). The game also has newer content the charts lack: balls Water, Wood, Force and Beast, 22 ball recipes and 22 passive recipes marked `dlc=1`, plus extra paths to existing results (e.g. Water + Poison -> Swamp, Beast + Egg Sac -> Spider Queen). So the mod should always read recipes from the game, never from the charts.
+Mod code: MIT licence, see [LICENSE](LICENSE). Not affiliated with the developers of BALL x PIT.
 
-The mod reads only. It never writes game state or saves.
+The all-in-one zip includes [BepInEx](https://github.com/BepInEx/BepInEx) (LGPL-2.1) unchanged, with the .NET runtime it ships with.

@@ -61,9 +61,13 @@ public class Hud : MonoBehaviour
         if (_builtFor == null || _builtFor.Pointer != ui.Pointer || _dps == null) Build(ui);
 
         UpdateDps(battle);
-        UpdateBars(ui, battle);
 
-        bool show = !_hidden && ui.gameObject.activeInHierarchy;
+        // Safety net in case the screen closed without the game calling Deactivate.
+        if (Plugin.LevelUpOpen && (LevelUpUI.I == null || !LevelUpUI.I.isActiveAndEnabled)) Plugin.LevelUpOpen = false;
+
+        // Hidden on the level-up screen, where the bars' spots are covered by the pick panel.
+        bool show = !_hidden && !Plugin.LevelUpOpen && ui.gameObject.activeInHierarchy;
+        if (show) UpdateBars(ui, battle);
         SetVisible(show);
     }
 

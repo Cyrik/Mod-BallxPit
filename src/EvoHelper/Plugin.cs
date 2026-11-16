@@ -14,10 +14,11 @@ namespace EvoHelper;
 [BepInPlugin("schuah.ballxpit.evohelper", "EvoHelper", Version)]
 public class Plugin : BasePlugin
 {
-    public const string Version = "0.9.6";
+    public const string Version = "1.0.0";
 
     internal static new ManualLogSource Log;
     internal static bool RecipesDumped;
+    internal static bool LevelUpOpen;   // level-up / pick screen is showing
 
     public override void Load()
     {
@@ -85,6 +86,7 @@ internal static class Patches
     {
         try
         {
+            Plugin.LevelUpOpen = true;
             Plugin.Log.LogInfo($"Level-up screen opened (type {t}).");
             Plugin.DumpRecipes();
             Plugin.LogBatch();
@@ -96,6 +98,7 @@ internal static class Patches
     [HarmonyPatch(typeof(LevelUpUI), nameof(LevelUpUI.Deactivate))]
     private static void OnLevelUpClosed()
     {
+        Plugin.LevelUpOpen = false;
         try { Evo.Clear(); }
         catch (Exception e) { Plugin.Log.LogError(e); }
     }

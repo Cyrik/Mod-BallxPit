@@ -8,7 +8,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
-    <GameDir>D:\Games\BALLxPIT</GameDir>
+    <GameDir Condition="'$(GameDir)' == ''">D:\Games\BALLxPIT</GameDir>
   </PropertyGroup>
 
   <ItemGroup>
