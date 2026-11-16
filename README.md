@@ -23,6 +23,8 @@ Shows evolution recipes right inside the game, so you don't need the wiki open w
 
 **Keys:** `F8` hides the evolution panel, `F9` hides the DPS and bar numbers.
 
+**Controller:** on the level-up screen, press the right stick (R3) to inspect the icons. Move between them with the d-pad or left stick; the selected icon's tooltip opens straight away. A goes into that tooltip's icons, B backs out (and leaves inspect mode at the top), hold LT/RT for descriptions. The right stick scrolls the panel. While inspecting, the game's own pick screen ignores the pad.
+
 Recipes are read from the game's own data, not from a hand-made list, so newer balls and DLC recipes are included, and it stays correct after game updates that only change content. The mod only reads. It never changes your save or the game's state.
 
 ## Install (Windows, Steam)
@@ -65,6 +67,7 @@ The build copies `EvoHelper.dll` into the game's `BepInEx\plugins\EvoHelper\`. A
 | `Plugin.cs` | Entry point and Harmony hooks on the level-up screen |
 | `Evo.cs` | Recipe logic: owned items and levels, offers, ready pairs, encyclopedia check |
 | `Overlay.cs` | The evolutions block in the game's tooltip, icon chips, scrolling, nested tooltips |
+| `OverlayPad.cs` | Controller inspect mode for the block and its tooltips |
 | `Info.cs` | "Made from" / "evolves further" lookups and the game's description text |
 | `Hud.cs` | DPS, health and XP numbers |
 

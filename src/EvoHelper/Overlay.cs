@@ -11,7 +11,7 @@ namespace EvoHelper;
 // Adds an "Evolutions" block of icons to the game's own description panel on the
 // "Select an upgrade" page, using the game's font. Hovering an icon shows its name.
 // If building the block fails, it falls back to the plain IMGUI panel from v0.3.
-public class Overlay : MonoBehaviour
+public partial class Overlay : MonoBehaviour
 {
     public Overlay(IntPtr ptr) : base(ptr) { }
 
@@ -75,6 +75,7 @@ public class Overlay : MonoBehaviour
         {
             if (!show || _uguiFailed)
             {
+                if (Inspecting) ExitInspect();
                 if (_root != null) _root.gameObject.SetActive(false);
                 ClosePopupsFrom(0);
                 return;
@@ -87,18 +88,24 @@ public class Overlay : MonoBehaviour
 
             float width = _root.rect.width;
             if (width < 10f) return;   // wait for the first layout pass
-            if (_builtVersion != Evo.Version || Mathf.Abs(width - _builtWidth) > 1f)
+            if (_builtVersion != Evo.Version || Mathf.Abs(width - _builtWidth) > 1f
+                || _builtPad != PadActive || _builtInspect != Inspecting)
             {
                 Rebuild(width);
                 _builtVersion = Evo.Version;
                 _builtWidth = width;
+                _builtPad = PadActive;
+                _builtInspect = Inspecting;
             }
             EnsureScrollable(ui);
-            UpdatePopups();
+            UpdatePad(ui);
+            _shift = _kbShift || _padDesc;
+            if (Inspecting) UpdatePopupsPad(); else UpdatePopups();
         }
         catch (Exception e)
         {
             _uguiFailed = true;
+            if (Inspecting) ExitInspect();
             Plugin.Log.LogError("In-tooltip panel failed, using the fallback panel: " + e);
             if (_root != null) Destroy(_root.gameObject);
             ClosePopupsFrom(0);
@@ -112,7 +119,7 @@ public class Overlay : MonoBehaviour
         // IMGUI y runs top-down; UI screen points run bottom-up.
         _mouse = new Vector2(ev.mousePosition.x, Screen.height - ev.mousePosition.y);
 
-        _shift = ev.shift;
+        _kbShift = ev.shift;
 
         if (ev.type == EventType.KeyDown && ev.keyCode == KeyCode.F8)
         {
@@ -209,6 +216,13 @@ public class Overlay : MonoBehaviour
         float y = Gap;
         bool anyUndiscovered = false;
         var offer = Evo.Current;
+
+        // Controller: how to reach the icons.
+        if (PadActive && _icons != null)
+        {
+            Text(_root, PadHint(Inspecting), 0, y, width, _hdrSize, Inspecting ? Gold : Grey, TextAlignmentOptions.Center, _hdrFont, _hdrMat);
+            y += _hdrSize * 1.6f;
+        }
 
         if (offer != null)
         {
