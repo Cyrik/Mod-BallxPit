@@ -14,7 +14,7 @@ namespace EvoHelper;
 [BepInPlugin("schuah.ballxpit.evohelper", "EvoHelper", Version)]
 public class Plugin : BasePlugin
 {
-    public const string Version = "1.3.0";
+    public const string Version = "1.4.0";
 
     internal static new ManualLogSource Log;
     internal static bool RecipesDumped;
@@ -28,6 +28,11 @@ public class Plugin : BasePlugin
         catch (Exception e) { Log.LogError("Equipment popup patches failed: " + e); }
         try { Harmony.CreateAndPatchAll(typeof(PadPatches)); }
         catch (Exception e) { Log.LogError("Controller input patches failed; inspect mode may let the game react underneath: " + e); }
+        StickSwap.Init(Config);
+        try { Harmony.CreateAndPatchAll(typeof(StickSwapPatches)); }
+        catch (Exception e) { Log.LogError("Swap sticks input patches failed: " + e); }
+        try { Harmony.CreateAndPatchAll(typeof(StickSwapMenuPatches)); }
+        catch (Exception e) { Log.LogError("Swap sticks options row failed: " + e); }
         AddComponent<Overlay>();
         AddComponent<Hud>();
         Log.LogInfo($"EvoHelper {Version} loaded. F8 toggles the evolution block, F9 the DPS / bar numbers.");

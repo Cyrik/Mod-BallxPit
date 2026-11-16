@@ -44,6 +44,12 @@ The panel shows these with the game's own button icons, for Xbox, PlayStation an
 
 ![Controller inspect mode with button hints](docs/screenshots/4-controller-inspect.png)
 
+**Swap the sticks.** Two extra toggles at the bottom of the game's Options > General:
+- **Village: camera on left stick, cursor on right** (the game's default is the other way round).
+- **Fights: aim with left stick, move with right.**
+
+They only affect a controller, and menu scrolling stays as it is. They're saved in the mod's own config file, `BepInEx\config\schuah.ballxpit.evohelper.cfg`, not in the game's settings.
+
 ## Where the recipes come from
 
 Recipes are read from the game's own data, not from a hand-made list, so newer balls and DLC recipes are included, and it stays correct after game updates that only change content. The mod only reads. It never changes your save or the game's state.
@@ -93,6 +99,7 @@ The build copies `EvoHelper.dll` into the game's `BepInEx\plugins\EvoHelper\`. A
 | `Info.cs` | "Made from" / "evolves further" lookups and the game's description text |
 | `CharLock.cs` | Which character a character-specific passive belongs to |
 | `Hud.cs` | DPS, health and XP numbers |
+| `StickSwap.cs` | Optional stick swap for the village and fights, and its rows in Options > General |
 
 ### Game classes used (from a Cpp2IL dump)
 - `InfoDB.I.Heroes` / `.Passives`: every ball and passive. `UpgradeInfo.MergeComponents` (ingredient sets) and `.Evolutions`.
