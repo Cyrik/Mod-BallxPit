@@ -144,7 +144,7 @@ internal static class Evo
     }
 
     // All evolutions of `inf`, one line per recipe that uses it, with the other ingredients.
-    static List<EvoLine> EvosFor(UpgradeInfo inf)
+    public static List<EvoLine> EvosFor(UpgradeInfo inf)
     {
         var lines = new List<EvoLine>();
         if (inf?.Evolutions == null) return lines;

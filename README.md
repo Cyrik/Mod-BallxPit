@@ -11,6 +11,8 @@ Shows evolution recipes right inside the game, so you don't need the wiki open w
 - **Gold border** = not in your encyclopedia yet. A small **+** means the result evolves further.
 - **Ready to evolve**: the pairs you already own (each ingredient needs Lv3, then a Fusion Reactor).
 
+**Details view and HUD:** the game's equipment popup (the level-up screen's Details view, and hovering your balls or passives during a run) also lists that item's evolutions, highlighted by what you own.
+
 **Hover any icon** for its own tooltip: what it is made from, what it evolves into next, and **hold Shift** for the game's description. Tooltips nest, so you can follow a chain all the way up or down. Move the mouse away and they close.
 
 ![Nested tooltip: made from and evolves further](docs/screenshots/2-nested-tooltip.png)
@@ -68,6 +70,7 @@ The build copies `EvoHelper.dll` into the game's `BepInEx\plugins\EvoHelper\`. A
 | `Evo.cs` | Recipe logic: owned items and levels, offers, ready pairs, encyclopedia check |
 | `Overlay.cs` | The evolutions block in the game's tooltip, icon chips, scrolling, nested tooltips |
 | `OverlayPad.cs` | Controller inspect mode for the block and its tooltips |
+| `OverlayEquip.cs` | Evolutions list in the game's equipment popup (Details view, HUD hover) |
 | `Info.cs` | "Made from" / "evolves further" lookups and the game's description text |
 | `Hud.cs` | DPS, health and XP numbers |
 

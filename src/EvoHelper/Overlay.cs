@@ -70,6 +70,7 @@ public partial class Overlay : MonoBehaviour
 
     void LateUpdate()
     {
+        UpdateEquipBlocks();
         bool show = !_hidden && ShouldShow();
         try
         {

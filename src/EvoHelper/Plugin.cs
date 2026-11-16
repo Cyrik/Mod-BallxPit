@@ -14,7 +14,7 @@ namespace EvoHelper;
 [BepInPlugin("schuah.ballxpit.evohelper", "EvoHelper", Version)]
 public class Plugin : BasePlugin
 {
-    public const string Version = "1.1.0";
+    public const string Version = "1.2.0";
 
     internal static new ManualLogSource Log;
     internal static bool RecipesDumped;
@@ -24,6 +24,8 @@ public class Plugin : BasePlugin
     {
         Log = base.Log;
         Harmony.CreateAndPatchAll(typeof(Patches));
+        try { Harmony.CreateAndPatchAll(typeof(EquipPatches)); }
+        catch (Exception e) { Log.LogError("Equipment popup patches failed: " + e); }
         try { Harmony.CreateAndPatchAll(typeof(PadPatches)); }
         catch (Exception e) { Log.LogError("Controller input patches failed; inspect mode may let the game react underneath: " + e); }
         AddComponent<Overlay>();
