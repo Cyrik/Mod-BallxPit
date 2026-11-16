@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Build of EvoHelper for the macOS (Mono) version of the game, loaded by BepInEx 5.
+       Compiles the same sources as ../EvoHelper with MONO defined, plus Compat.cs. -->
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <AssemblyName>EvoHelper</AssemblyName>
+    <RootNamespace>EvoHelper</RootNamespace>
+    <Nullable>disable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <!-- Required by the publicizer: lets the compiled code reach the game's non-public members. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <DefineConstants>$(DefineConstants);MONO</DefineConstants>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <!-- The folder that holds Balls.app and, once installed, BepInEx/. -->
+    <GameDir Condition="'$(GameDir)' == ''">$(HOME)/Library/Application Support/Steam/steamapps/common/BALLxPIT</GameDir>
+    <ManagedDir>$(GameDir)/Balls.app/Contents/Resources/Data/Managed</ManagedDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../EvoHelper/*.cs" />
+    <Compile Include="Compat.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BepInEx.AssemblyPublicizer.MSBuild" Version="0.4.*" PrivateAssets="all" />
+    <Reference Include="$(GameDir)/BepInEx/core/BepInEx.dll" Private="false" />
+    <Reference Include="$(GameDir)/BepInEx/core/0Harmony.dll" Private="false" />
+    <!-- The IL2CPP interop assemblies expose every game member as public; publicizing gives
+         the Mono build the same view of the game's own code. -->
+    <Reference Include="$(ManagedDir)/Assembly-CSharp.dll" Private="false" Publicize="true" />
+    <Reference Include="$(ManagedDir)/Assembly-CSharp-firstpass.dll" Private="false" Publicize="true" />
+    <!-- Everything else the game ships, except its copy of the base class library, which
+         would clash with the netstandard reference assemblies. -->
+    <Reference Include="$(ManagedDir)/*.dll" Private="false"
+               Exclude="$(ManagedDir)/Assembly-CSharp*.dll;$(ManagedDir)/mscorlib.dll;$(ManagedDir)/netstandard.dll;$(ManagedDir)/System*.dll;$(ManagedDir)/Mono.*.dll;$(ManagedDir)/Microsoft.*.dll" />
+  </ItemGroup>
+
+  <Target Name="DeployToGame" AfterTargets="Build" Condition="'$(SkipDeploy)' != 'true'">
+    <MakeDir Directories="$(GameDir)/BepInEx/plugins/EvoHelper" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(GameDir)/BepInEx/plugins/EvoHelper" />
+  </Target>
+
+</Project>

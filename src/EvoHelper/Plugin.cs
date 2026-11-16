@@ -4,7 +4,9 @@ using System.IO;
 using System.Linq;
 using BepInEx;
 using BepInEx.Logging;
+#if !MONO
 using BepInEx.Unity.IL2CPP;
+#endif
 using HarmonyLib;
 
 namespace EvoHelper;
@@ -12,17 +14,38 @@ namespace EvoHelper;
 // Read-only helper: shows what each offered ball/passive can evolve into.
 // It never changes game state or save files.
 [BepInPlugin("schuah.ballxpit.evohelper", "EvoHelper", Version)]
+#if MONO
+// BepInEx 5 on the game's Mono build (macOS): the plugin is itself a component.
+public class Plugin : BaseUnityPlugin
+#else
 public class Plugin : BasePlugin
+#endif
 {
     public const string Version = "1.4.0";
 
-    internal static new ManualLogSource Log;
     internal static bool RecipesDumped;
     internal static bool LevelUpOpen;   // level-up / pick screen is showing
+
+#if MONO
+    internal static ManualLogSource Log;
+
+    void Awake()
+    {
+        Log = Logger;
+        Load();
+    }
+
+    T AddComponent<T>() where T : UnityEngine.Component => gameObject.AddComponent<T>();
+
+    void Load()
+    {
+#else
+    internal static new ManualLogSource Log;
 
     public override void Load()
     {
         Log = base.Log;
+#endif
         Harmony.CreateAndPatchAll(typeof(Patches));
         try { Harmony.CreateAndPatchAll(typeof(EquipPatches)); }
         catch (Exception e) { Log.LogError("Equipment popup patches failed: " + e); }
