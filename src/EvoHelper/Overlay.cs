@@ -218,12 +218,6 @@ public partial class Overlay : MonoBehaviour
         bool anyUndiscovered = false;
         var offer = Evo.Current;
 
-        // Controller: how to reach the icons.
-        if (PadActive && _icons != null)
-        {
-            Text(_root, PadHint(Inspecting), 0, y, width, _hdrSize, Inspecting ? Gold : Grey, TextAlignmentOptions.Center, _hdrFont, _hdrMat);
-            y += _hdrSize * 1.6f;
-        }
 
         if (offer != null)
         {
@@ -250,6 +244,13 @@ public partial class Overlay : MonoBehaviour
             y = Header($"Ready to evolve (each Lv{Evo.EvoLevel})", y, width);
             var chips = pairs.Select(p => (parts: p.Parts, result: p.Result, bg: ChipBgReady, showLvlOf3: true)).ToList();
             y = FlowChips(_root, _icons, chips, 0, y, width, ref anyUndiscovered);
+        }
+
+        // Controller: how to reach the icons, with the game's own button icons.
+        if (PadActive && _icons.Count > 0)
+        {
+            y += Gap * 0.5f;
+            y = PadHintRow(_root, y, width);
         }
 
         if (anyUndiscovered)

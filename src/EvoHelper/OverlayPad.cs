@@ -2,8 +2,10 @@ using System;
 using System.Collections.Generic;
 using HarmonyLib;
 using Il2CppInterop.Runtime.Attributes;
+using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.UI;
 
 namespace EvoHelper;
 
@@ -258,16 +260,64 @@ public partial class Overlay
         return jt == JoypadType.kPS4 || jt == JoypadType.kPS5 ? "R2" : jt == JoypadType.kSwitch ? "ZR" : "RT";
     }
 
-    static string PadHint(bool inspecting)
+    // One centred row: [button icon] label   [button icon] label ...
+    // Falls back to a text name when the game has no sprite for that button.
+    float PadHintRow(RectTransform parent, float y, float width)
     {
-        bool ps = InputMgr.I != null && (InputMgr.I.LastJoypadType == JoypadType.kPS4 || InputMgr.I.LastJoypadType == JoypadType.kPS5);
-        bool sw = InputMgr.I != null && InputMgr.I.LastJoypadType == JoypadType.kSwitch;
-        string a = ps ? "Cross" : sw ? "B" : "A";
-        string b = ps ? "Circle" : sw ? "A" : "B";
-        string r3 = ps || sw ? "R3" : "RS";
-        return inspecting
-            ? $"{a} open   {b} back   hold {DescKey()} description"
-            : $"press {r3} to inspect icons";
+        var items = Inspecting
+            ? new List<(ControllerBtn btn, string label)> { (ControllerBtn.kA, "open"), (ControllerBtn.kB, "back"), (ControllerBtn.kRightTrigger, "description") }
+            : new List<(ControllerBtn btn, string label)> { (ControllerBtn.kR3, "inspect icons") };
+        Color color = Inspecting ? Gold : Grey;
+        float iconH = Mathf.Round(_hdrSize * 1.9f);
+        float space = Mathf.Round(_hdrSize * 0.4f), groupGap = Mathf.Round(_hdrSize * 1.4f);
+
+        // Measure first so the row can be centred.
+        var parts = new List<(Sprite sprite, float iconW, string label, float labelW)>();
+        float total = 0f;
+        var measure = Text(parent, "", 0, 0, 10, _hdrSize, color, TextAlignmentOptions.Left, _hdrFont, _hdrMat);
+        foreach (var (btn, label) in items)
+        {
+            Sprite sp = null;
+            try { sp = InputIconMgr.I?.GetBtnSprite(btn); } catch { }
+            float iw = sp != null ? Mathf.Round(iconH * sp.rect.width / Mathf.Max(1f, sp.rect.height)) : 0f;
+            string text = sp != null ? label : $"{BtnName(btn)} {label}";
+            float lw = Mathf.Ceil(measure.GetPreferredValues(text).x) + 2f;
+            parts.Add((sp, iw, text, lw));
+            total += (iw > 0 ? iw + space : 0) + lw;
+        }
+        Destroy(measure.gameObject);
+        total += groupGap * (parts.Count - 1);
+
+        float x = Mathf.Round(Mathf.Max(0f, (width - total) * 0.5f));
+        float textY = y + (iconH - _hdrSize * 1.4f) * 0.5f;
+        foreach (var (sp, iw, text, lw) in parts)
+        {
+            if (sp != null)
+            {
+                var ir = NewRect("BtnIcon", parent);
+                Place(ir, x, y, iw, iconH);
+                var img = ir.gameObject.AddComponent<Image>();
+                img.sprite = sp; img.preserveAspect = true; img.raycastTarget = false;
+                x += iw + space;
+            }
+            Text(parent, text, x, textY, lw, _hdrSize, color, TextAlignmentOptions.Left, _hdrFont, _hdrMat);
+            x += lw + groupGap;
+        }
+        return y + iconH + Gap * 0.5f;
+    }
+
+    static string BtnName(ControllerBtn btn)
+    {
+        var jt = InputMgr.I != null ? InputMgr.I.LastJoypadType : JoypadType.kXBox;
+        bool ps = jt == JoypadType.kPS4 || jt == JoypadType.kPS5, sw = jt == JoypadType.kSwitch;
+        return btn switch
+        {
+            ControllerBtn.kA => ps ? "Cross" : sw ? "B" : "A",
+            ControllerBtn.kB => ps ? "Circle" : sw ? "A" : "B",
+            ControllerBtn.kRightTrigger => DescKey(),
+            ControllerBtn.kR3 => ps || sw ? "R3" : "RS",
+            _ => btn.ToString(),
+        };
     }
 }
 
