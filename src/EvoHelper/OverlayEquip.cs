@@ -24,6 +24,7 @@ public partial class Overlay
         public RectTransform Block;
         public LayoutElement Layout;
         public bool InLayout;
+        public bool SkipLogged;
         public int BuiltVersion = -1;
         public float BuiltWidth = -1;
     }
@@ -59,26 +60,25 @@ public partial class Overlay
     void UpdateEquip(EquipTarget t)
     {
         var wrapper = t.Panel.Wrapper != null ? t.Panel.Wrapper : t.Panel.transform.Cast<RectTransform>();
+        // Only popups that stack their contents (Details view, HUD hover). The fusion /
+        // evolution result screen also uses this panel, inside a fixed-size scroll view with
+        // no layout group; the block would spill over the screen there, so skip it.
+        if (wrapper.GetComponent<VerticalLayoutGroup>() == null)
+        {
+            if (t.Block != null) t.Block.gameObject.SetActive(false);
+            if (!t.SkipLogged) { t.SkipLogged = true; Plugin.Log.LogInfo($"Equipment popup '{wrapper.name}' has no layout group; no evolutions block there."); }
+            return;
+        }
         if (t.Block == null)
         {
             if (!_equipLayoutLogged) { _equipLayoutLogged = true; LayoutLog.Dump(t.Panel.transform); }
             EnsureFonts(t.Panel.transform);
             t.Block = NewRect("EvoHelperEquipBlock", wrapper);
-            t.InLayout = wrapper.GetComponent<VerticalLayoutGroup>() != null;
-            if (t.InLayout)
-            {
-                t.Layout = t.Block.gameObject.AddComponent<LayoutElement>();
-                t.Layout.flexibleWidth = 1f;
-            }
-            else
-            {
-                t.Block.anchorMin = new Vector2(0.06f, 0f);
-                t.Block.anchorMax = new Vector2(0.94f, 0f);
-                t.Block.pivot = new Vector2(0.5f, 0f);
-                t.Block.anchoredPosition = new Vector2(0f, _fs * 1.2f);
-            }
+            t.InLayout = true;
+            t.Layout = t.Block.gameObject.AddComponent<LayoutElement>();
+            t.Layout.flexibleWidth = 1f;
             t.BuiltVersion = -1;
-            Plugin.Log.LogInfo($"Equipment popup block attached to '{wrapper.name}' (layout group: {t.InLayout}).");
+            Plugin.Log.LogInfo($"Equipment popup block attached to '{wrapper.name}'.");
         }
         if (!t.Block.gameObject.activeSelf) t.Block.gameObject.SetActive(true);
         if (t.InLayout && t.Block.GetSiblingIndex() != wrapper.childCount - 1) t.Block.SetAsLastSibling();

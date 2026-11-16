@@ -10,6 +10,8 @@ Shows evolution recipes right inside the game, so you don't need the wiki open w
 - The tooltip of each offered ball or passive lists every evolution it is part of, as icons: `partner = result`. Recipes you can already make are highlighted.
 - **Gold border** = not in your encyclopedia yet. A small **+** means the result evolves further.
 - **Ready to evolve**: the pairs you already own (each ingredient needs Lv3, then a Fusion Reactor).
+- **Character portrait** in the corner of a passive = only that character can find it. Bright if they are in this run (Matchmaker pairs count), grey if not.
+- The game's own "Synergies with Equipment" list is hidden while the panel shows, since the panel covers it (`F8` brings it back).
 
 **Details view and HUD:** the game's equipment popup (the level-up screen's Details view, and hovering your balls or passives during a run) also lists that item's evolutions, highlighted by what you own.
 
@@ -89,6 +91,7 @@ The build copies `EvoHelper.dll` into the game's `BepInEx\plugins\EvoHelper\`. A
 | `OverlayPad.cs` | Controller inspect mode for the block and its tooltips |
 | `OverlayEquip.cs` | Evolutions list in the game's equipment popup (Details view, HUD hover) |
 | `Info.cs` | "Made from" / "evolves further" lookups and the game's description text |
+| `CharLock.cs` | Which character a character-specific passive belongs to |
 | `Hud.cs` | DPS, health and XP numbers |
 
 ### Game classes used (from a Cpp2IL dump)

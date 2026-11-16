@@ -70,6 +70,7 @@ public partial class Overlay : MonoBehaviour
 
     void LateUpdate()
     {
+        CharLock.LogAll();
         UpdateEquipBlocks();
         bool show = !_hidden && ShouldShow();
         try
@@ -78,6 +79,7 @@ public partial class Overlay : MonoBehaviour
             {
                 if (Inspecting) ExitInspect();
                 if (_root != null) _root.gameObject.SetActive(false);
+                RestoreGameSynergies();
                 ClosePopupsFrom(0);
                 return;
             }
@@ -86,6 +88,7 @@ public partial class Overlay : MonoBehaviour
             if (_root == null && !CreateRoot(ui)) { _uguiFailed = true; return; }
             if (!_root.gameObject.activeSelf) _root.gameObject.SetActive(true);
             if (_inLayoutGroup && _root.GetSiblingIndex() != _root.parent.childCount - 1) _root.SetAsLastSibling();
+            HideGameSynergies();
 
             float width = _root.rect.width;
             if (width < 10f) return;   // wait for the first layout pass
@@ -111,6 +114,33 @@ public partial class Overlay : MonoBehaviour
             if (_root != null) Destroy(_root.gameObject);
             ClosePopupsFrom(0);
         }
+    }
+
+    // The game's own "Synergies with Equipment" heading and rows, in the same list as our
+    // block. Hidden while our block shows (it lists the same recipes), restored when F8 hides ours.
+    readonly List<GameObject> _hiddenGame = new();
+
+    void HideGameSynergies()
+    {
+        if (!_inLayoutGroup || _root == null) return;
+        var list = _root.parent;
+        for (int i = 0; i < list.childCount; i++)
+        {
+            var go = list.GetChild(i).gameObject;
+            if (!go.activeSelf || go == _root.gameObject) continue;
+            if (go.name == "TxtEvos" || go.GetComponent<EquipmentEvoPanel>() != null)
+            {
+                go.SetActive(false);
+                if (!_hiddenGame.Contains(go)) _hiddenGame.Add(go);
+            }
+        }
+    }
+
+    void RestoreGameSynergies()
+    {
+        if (_hiddenGame.Count == 0) return;
+        foreach (var go in _hiddenGame) if (go != null) go.SetActive(true);
+        _hiddenGame.Clear();
     }
 
     void OnGUI()
@@ -399,6 +429,29 @@ public partial class Overlay : MonoBehaviour
             float ty = size - _hdrSize * 1.25f;
             Text(holder, lvl, 1, ty + 1, size, _hdrSize, new Color(0, 0, 0, 0.9f), TextAlignmentOptions.Right, _hdrFont, _hdrMat);
             Text(holder, lvl, 0, ty, size, _hdrSize, item.Lvl >= Evo.EvoLevel ? Green : _textColor, TextAlignmentOptions.Right, _hdrFont, _hdrMat);
+        }
+        else if (size >= 20f)
+        {
+            // Character-specific passive: that character's portrait in the corner,
+            // lit if they are in this run (so it can roll), greyed if not.
+            var chars = CharLock.For(item.Info);
+            if (chars != null && chars.Count > 0)
+            {
+                bool live = CharLock.InRun(chars);
+                float b = Mathf.Round(size * 0.42f);
+                for (int i = 0; i < chars.Count; i++)
+                {
+                    var sprite = chars[i].IconSmall != null ? chars[i].IconSmall : chars[i].Icon;
+                    if (sprite == null) continue;
+                    var badge = NewRect("CharBadge", holder);
+                    Place(badge, size - b * (i + 1) + 2, size - b + 2, b, b);
+                    var bi = badge.gameObject.AddComponent<Image>();
+                    bi.raycastTarget = false;
+                    bi.preserveAspect = true;
+                    bi.sprite = sprite;
+                    bi.color = live ? Color.white : new Color(0.32f, 0.32f, 0.32f, 0.85f);
+                }
+            }
         }
         sink.Add((holder, item));
     }

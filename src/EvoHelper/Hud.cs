@@ -197,10 +197,12 @@ public class Hud : MonoBehaviour
         }
     }
 
+    // Invariant culture: some locales group digits with a narrow no-break space the game font lacks (shows as "?").
+    static readonly System.Globalization.CultureInfo Inv = System.Globalization.CultureInfo.InvariantCulture;
     static string Fmt(long v) =>
-        v >= 10_000_000 ? (v / 1_000_000f).ToString("0.#") + "M"
-        : v >= 100_000 ? (v / 1000f).ToString("0.#") + "k"
-        : v.ToString("N0");
+        v >= 10_000_000 ? (v / 1_000_000f).ToString("0.#", Inv) + "M"
+        : v >= 100_000 ? (v / 1000f).ToString("0.#", Inv) + "k"
+        : v.ToString("N0", Inv);
 
     // ---------- building ----------
 
