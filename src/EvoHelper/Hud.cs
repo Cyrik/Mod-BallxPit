@@ -16,13 +16,14 @@ public class Hud : MonoBehaviour
 {
     public Hud(IntPtr ptr) : base(ptr) { }
 
-    const float Window = 2f;          // seconds of game time the DPS is averaged over
+    const float Window = 3f;          // seconds of game time the DPS is averaged over
     const float Refresh = 0.5f;       // real seconds between DPS text updates, so it stays readable
 
     static bool _hidden;
     bool _errorLogged;
 
     TextMeshProUGUI _dps, _dpsShadow, _xp, _xpShadow, _hp, _hpShadow;
+    RectTransform _dpsBg;
     Canvas _root;
     int _xpLogs, _lastLoggedXp = -1;
     bool _placeLogged;
@@ -114,6 +115,8 @@ public class Hud : MonoBehaviour
         if (Time.unscaledTime < _nextDpsText) return;
         _nextDpsText = Time.unscaledTime + Refresh;
         SetText(_dps, _dpsShadow, $"DPS <color=#F2C14E>{Fmt(dps)}</color>");
+        if (_dpsBg != null)
+            _dpsBg.sizeDelta = new Vector2(Mathf.Round(_dps.preferredWidth + _dps.fontSize * 1.2f), Mathf.Round(_dps.fontSize * 1.6f));
     }
 
     float LastT()
@@ -223,6 +226,13 @@ public class Hud : MonoBehaviour
         dpsRt.anchoredPosition = new Vector2(0f, -10f);
         dpsRt.sizeDelta = new Vector2(300f, src.fontSize * 1.2f);
         OnTop(dpsRt);
+        // Semi-transparent backing so it reads over busy backgrounds; sized to the text each update.
+        _dpsBg = NewRect("Bg", dpsRt);
+        _dpsBg.anchorMin = _dpsBg.anchorMax = _dpsBg.pivot = new Vector2(0.5f, 0.5f);
+        _dpsBg.sizeDelta = new Vector2(120f, dpsRt.sizeDelta.y);
+        var bg = _dpsBg.gameObject.AddComponent<Image>();
+        bg.color = new Color(0.06f, 0.04f, 0.06f, 0.6f);
+        bg.raycastTarget = false;
         (_dps, _dpsShadow) = ShadowText(dpsRt, src, src.fontSize * 0.75f);
 
         // Health and XP numbers: on the root canvas, above everything, moved onto the bars each frame.

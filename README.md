@@ -16,7 +16,7 @@ Shows evolution recipes right inside the game, so you don't need the wiki open w
 ![Nested tooltip: made from and evolves further](docs/screenshots/2-nested-tooltip.png)
 
 **During a run**
-- DPS at the top of the screen (damage from your balls, averaged over the last 2 seconds).
+- DPS at the top of the screen (damage from your balls, averaged over the last 3 seconds).
 - Numbers on the health orb and the XP bar.
 
 ![DPS, health and XP numbers](docs/screenshots/3-hud-dps-hp-xp.png)
