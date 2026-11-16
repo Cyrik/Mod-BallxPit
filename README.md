@@ -44,8 +44,6 @@ The panel shows these with the game's own button icons, for Xbox, PlayStation an
 
 ## Where the recipes come from
 
-
-
 Recipes are read from the game's own data, not from a hand-made list, so newer balls and DLC recipes are included, and it stays correct after game updates that only change content. The mod only reads. It never changes your save or the game's state.
 
 ## Install (Windows, Steam)
