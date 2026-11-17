@@ -69,9 +69,43 @@ internal static class Describe
     static LocalizationParamsManager _params;
     static bool _warned;
 
+    static readonly Dictionary<string, string> NameCache = new();
+    static string _lang;
+    static bool _nameWarned;
+
+    // Both caches hold text in one language: empty them when the player switches language.
+    static void CheckLanguage()
+    {
+        string lang = null;
+        try { lang = LocalizationManager.CurrentLanguage; } catch { }
+        if (lang == _lang) return;
+        _lang = lang;
+        Cache.Clear();
+        NameCache.Clear();
+    }
+
+    // The name in the game's current language, as the game's own panels show it
+    // (they look up GetNameSlug()). Falls back to the built-in English name.
+    public static string Name(UpgradeInfo inf)
+    {
+        if (inf == null) return "";
+        CheckLanguage();
+        if (NameCache.TryGetValue(inf.Slug, out var hit)) return hit;
+        string result = null;
+        try { result = LocalizationManager.GetTranslation(inf.GetNameSlug()); }
+        catch (Exception e)
+        {
+            if (!_nameWarned) { _nameWarned = true; Plugin.Log.LogWarning("Name lookup failed, using English names: " + e.Message); }
+        }
+        if (string.IsNullOrEmpty(result)) result = inf.Name ?? "";
+        NameCache[inf.Slug] = result;
+        return result;
+    }
+
     public static string Text(UpgradeInfo inf, int lvlIdx)
     {
         if (inf == null) return "";
+        CheckLanguage();
         string key = inf.Slug + "|" + lvlIdx;
         if (Cache.TryGetValue(key, out var hit)) return hit;
 

@@ -108,7 +108,7 @@ public partial class Overlay
         foreach (var inf in t.Infos)
         {
             var lines = Evo.EvosFor(inf);
-            string title = many ? $"{inf.Name}: evolutions" : "Evolutions";
+            string title = many ? $"{Describe.Name(inf)}: evolutions" : "Evolutions";
             Text(root, title, 0, y, width, _hdrSize, _hdrColor, TextAlignmentOptions.Center, _hdrFont, _hdrMat);
             y += _hdrSize * 1.8f;
             if (lines.Count == 0)

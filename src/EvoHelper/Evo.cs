@@ -97,7 +97,7 @@ internal static class Evo
     public static Item MakeItem(UpgradeInfo inf) => new Item
     {
         Info = inf,
-        Name = inf.Name,
+        Name = Describe.Name(inf),
         Lvl = Owned.TryGetValue(inf.Slug, out var l) ? l : 0,
         Discovered = IsDiscovered(inf),
         IsBall = inf.TryCast<HeroInfo>() != null,
@@ -226,7 +226,7 @@ internal static class Evo
                         parts.Add(MakeItem(c));
                     }
                     if (!all || !usesThis) continue;
-                    var key = e.Name + "|" + string.Join("+", parts.Select(p => p.Name).OrderBy(n => n));
+                    var key = e.Slug + "|" + string.Join("+", parts.Select(p => p.Info.Slug).OrderBy(n => n));
                     if (seen.Add(key)) Pairs.Add(new OwnedPair { Result = MakeItem(e), Parts = parts });
                 }
             }
